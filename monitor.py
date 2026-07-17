@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 Monitor the live system - shows status and recent activity.
-Pour monitorer les données du serveur sans relancer le live : après rsync pull,
-lancer avec --data-dir server_logs/server_data_live
+To monitor server data locally without restarting the live system: after an
+rsync pull, run with --data-dir server_logs/server_data_live
 """
 
 import argparse
@@ -30,7 +30,7 @@ def parse_args():
         "--data-dir",
         type=Path,
         default=None,
-        help="Dossier des données (défaut: data/live). Utiliser server_logs/server_data_live pour monitorer les données serveur après rsync.",
+        help="Data directory (default: data/live). Use server_logs/server_data_live to monitor server data after rsync.",
     )
     return p.parse_args()
 
@@ -79,12 +79,12 @@ def display_status(data_dir: Path, is_remote: bool = False):
     
     title = "[bold cyan]🤖 Live System Monitor[/bold cyan]"
     if is_remote:
-        title += " [dim](données serveur)[/dim]"
+        title += " [dim](server data)[/dim]"
     console.print(Panel.fit(title, border_style="cyan"))
     
     # Check if process is running (only meaningful when monitoring local data)
     if is_remote:
-        status = "[dim]Données serveur (process N/A en local)[/dim]"
+        status = "[dim]Server data (process N/A locally)[/dim]"
     else:
         try:
             import subprocess
@@ -98,7 +98,7 @@ def display_status(data_dir: Path, is_remote: bool = False):
         status = "[green]🟢 RUNNING[/green]" if is_running else "[red]🔴 NOT RUNNING[/red]"
     console.print(f"\nSystem Status: {status}")
     
-    # Liste des matchs qu'on suit (ceux avec data Sportmonks/WebSocket: period ou elapsed)
+    # Matches currently followed (those with Sportmonks/WebSocket data: period or elapsed)
     matches_file = data_dir / "current_matches.json"
     if matches_file.exists():
         try:
@@ -106,14 +106,14 @@ def display_status(data_dir: Path, is_remote: bool = False):
             updated = data.get("updated_at", "")[:19].replace("T", " ")
             all_matches = data.get("matches", [])
             matches_list = [m for m in all_matches if m.get("period") or m.get("elapsed")]
-            console.print(f"\n[bold]⚽ Matchs suivis[/bold] ({len(matches_list)}) — MAJ: {updated}")
+            console.print(f"\n[bold]⚽ Matches followed[/bold] ({len(matches_list)}) — updated: {updated}")
             if matches_list:
                 table_m = Table(show_header=True, header_style="bold cyan")
-                table_m.add_column("Ligue", style="blue", width=8)
-                table_m.add_column("Domicile", style="cyan", width=14)
+                table_m.add_column("League", style="blue", width=8)
+                table_m.add_column("Home", style="cyan", width=14)
                 table_m.add_column("Score", justify="center", style="green", width=6)
-                table_m.add_column("Extérieur", style="cyan", width=14)
-                table_m.add_column("Période", style="dim", width=12)
+                table_m.add_column("Away", style="cyan", width=14)
+                table_m.add_column("Period", style="dim", width=12)
                 for m in matches_list:
                     period = m.get("period", "")
                     elapsed = m.get("elapsed", "")
@@ -127,11 +127,11 @@ def display_status(data_dir: Path, is_remote: bool = False):
                     )
                 console.print(table_m)
             else:
-                console.print("   [dim]Aucun match suivi (en attente données WebSocket/Sportmonks)[/dim]")
+                console.print("   [dim]No match followed yet (waiting for WebSocket/Sportmonks data)[/dim]")
         except (json.JSONDecodeError, OSError):
-            console.print("   [dim]Fichier matchs indisponible[/dim]")
+            console.print("   [dim]Matches file unavailable[/dim]")
     else:
-        console.print("\n[bold]⚽ Matchs soccer[/bold] — [dim]en attente (lance live_system.py)[/dim]")
+        console.print("\n[bold]⚽ Soccer matches[/bold] — [dim]waiting (start live_system.py)[/dim]")
     
     # Get CSV info
     csv_file = get_latest_csv(data_dir)
@@ -186,16 +186,16 @@ def display_status(data_dir: Path, is_remote: bool = False):
         with open(curves_file) as f:
             lines = f.readlines()
         if len(lines) > 1:
-            console.print("\n[bold]📈 Price Analysis (dernier but)[/bold]")
+            console.print("\n[bold]📈 Price Analysis (last goal)[/bold]")
             last = lines[-1].strip().split(",")
             if len(last) >= 16:
-                console.print(f"  Stabilisation: {last[12] or '?'}s | Meilleur exit: T+{last[13] or '?'}s")
+                console.print(f"  Stabilization: {last[12] or '?'}s | Best exit: T+{last[13] or '?'}s")
                 profit = last[14] if len(last) > 14 else ""
-                console.print(f"  Profit T+0→60: {profit}% | Marché: {last[15] if len(last) > 15 else '?'}")
+                console.print(f"  Profit T+0→60: {profit}% | Market: {last[15] if len(last) > 15 else '?'}")
                 if profit and profit != "":
                     try:
                         p = float(profit)
-                        verdict = "[green]✅ Assez de temps pour trader![/green]" if p > 0 else "[red]❌ Pas assez de temps[/red]"
+                        verdict = "[green]✅ Enough time to trade![/green]" if p > 0 else "[red]❌ Not enough time[/red]"
                         console.print(f"  {verdict}")
                     except (ValueError, TypeError):
                         pass
@@ -222,10 +222,10 @@ def main():
     if not data_dir.is_absolute():
         data_dir = PROJECT_ROOT / data_dir
     if not data_dir.exists():
-        console.print(f"[red]Dossier inexistant: {data_dir}[/red]")
+        console.print(f"[red]Directory not found: {data_dir}[/red]")
         sys.exit(1)
     is_remote = "server_data_live" in str(data_dir) or "server_logs" in str(data_dir)
-    console.print(f"[cyan]Données: {data_dir}[/cyan] | [cyan]Rafraîchissement: 10s[/cyan]")
+    console.print(f"[cyan]Data: {data_dir}[/cyan] | [cyan]Refresh: 10s[/cyan]")
     try:
         while True:
             display_status(data_dir, is_remote=is_remote)

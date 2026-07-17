@@ -1,9 +1,9 @@
 """
-TheSports client MQTT over WebSockets pour la détection de buts en direct.
+TheSports MQTT-over-WebSockets client for live goal detection.
 
 Protocole: MQTT over WebSockets (voir doc TheSports).
 - Payload: liste de matchs ou objet { "results": [...] }. Chaque match: id, score, stats, incidents, tlive.
-- score: array [match_id, status, home_array, away_array, ...], home_array[0]=buts domicile, away_array[0]=buts extérieur.
+- score: array [match_id, status, home_array, away_array, ...], home_array[0]=home goals, away_array[0]=away goals.
 - incidents: array de { type, position (1=home, 2=away), time, home_score, away_score, ... }.
 """
 
@@ -74,7 +74,7 @@ def _parse_score_entry(entry: dict) -> Optional[tuple[str, str, str, str, str]]:
 def _parse_score_array(score_arr) -> tuple[int, int]:
     """
     score = [match_id, status, home_array, away_array, ...]
-    home_array[0] = buts domicile (regular time), away_array[0] = buts extérieur.
+    home_array[0] = home goals (regular time), away_array[0] = away goals.
     """
     if not isinstance(score_arr, list) or len(score_arr) < 4:
         return (0, 0)
@@ -98,7 +98,7 @@ def _process_match_item(
 ) -> None:
     """
     Traite un match au format API TheSports: id, score (array), incidents (array).
-    incidents_fired: set de (key, type, signature) pour ne déclencher qu'une fois par événement.
+    incidents_fired: set of (key, type, signature) so each event only fires once.
     """
     match_id = _norm(str(item.get("id") or ""))
     score_arr = item.get("score")
@@ -112,7 +112,7 @@ def _process_match_item(
     h, a = _parse_score_array(score_arr) if isinstance(score_arr, list) else (0, 0)
     score_str = f"{h}-{a}"
 
-    # Debug serveur: on récupère bien la data TheSports live
+    # Server debug: confirms live TheSports data is coming through
     logger.info(
         "TheSports live: match_id={} score={} incidents={} stats={}",
         match_id or "(no id)",
@@ -171,7 +171,7 @@ def _process_payload(
     on_goal: Callable[..., object],
 ) -> None:
     """
-    Traite un payload au format ancien (dict avec score/scores list d'entrées, incidents).
+    Handles the legacy payload format (dict with score/scores entry list, incidents).
     Appelle les callbacks via run_coroutine_threadsafe depuis le thread MQTT.
     """
     score_list = data.get("score") or data.get("scores")
@@ -298,27 +298,27 @@ async def run_thesports_ws_loop(
     """
     Connexion MQTT over WebSockets. Payload: liste de matchs ou { results: [] }.
     Chaque match: id, score (array), stats, incidents. Si resolve_match_id(match_id) retourne
-    (home_team, away_team), les callbacks sont appelés; sinon debug log uniquement.
+    (home_team, away_team), callbacks are invoked; otherwise debug log only.
     """
     if last_scores is None:
         last_scores = {}
     loop = asyncio.get_running_loop()
-    # Un événement = un seul callback (évite 4x le même but si MQTT renvoie 4x le même message)
+    # One event = one callback (avoids firing 4x for the same goal when MQTT redelivers)
     incidents_fired: set = set()
     _INCIDENTS_FIRED_MAX = 2000
-    client_ref: dict = {}  # partagé avec run_mqtt et finally pour loop_stop/disconnect
+    client_ref: dict = {}  # shared with run_mqtt and finally for loop_stop/disconnect
 
     def on_connect(c, userdata, flags, rc):
         if rc == 0:
             c.subscribe(topic)
-            logger.info("TheSports MQTT connecté, topic {}", topic)
+            logger.info("TheSports MQTT connected, topic {}", topic)
         elif rc in (4, 5):
             logger.warning(
-                "TheSports MQTT auth échouée (rc={}). Vérifier user, secret et IP whitelist.",
+                "TheSports MQTT auth failed (rc={}). Check user, secret and IP whitelist.",
                 rc,
             )
         else:
-            logger.warning("TheSports MQTT connexion refusée rc={}", rc)
+            logger.warning("TheSports MQTT connection refused rc={}", rc)
 
     def _is_new_format(item: dict) -> bool:
         """True si le match est au format API (id + score array ou id + stats/incidents)."""

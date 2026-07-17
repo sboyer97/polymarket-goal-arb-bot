@@ -1,6 +1,6 @@
 """
 Structured trade logging pour analyse post-trade.
-Écrit les trades en JSON dans un fichier séparé pour analyse facile.
+Writes trades as JSON to a separate file for easy analysis.
 """
 import json
 import asyncio
@@ -10,7 +10,7 @@ from typing import Optional, Any
 from dataclasses import dataclass, asdict
 from loguru import logger
 
-# Répertoire des logs
+# Log directory
 TRADES_LOG_DIR = Path("server_logs/trades")
 TRADES_LOG_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -57,7 +57,7 @@ class TradeRecord:
 
 
 class TradeLogger:
-    """Logger structuré pour les trades - async, non-bloquant."""
+    """Structured trade logger - async, non-blocking."""
     
     def __init__(self):
         self._log_file = TRADES_LOG_DIR / f"trades_{datetime.now().strftime('%Y%m%d')}.jsonl"
@@ -89,7 +89,7 @@ class TradeLogger:
         bid: float = 0,
         ask: float = 0,
     ) -> None:
-        """Log une entrée de position (BUY)."""
+        """Log a position entry (BUY)."""
         spread = ((ask - bid) / bid * 100) if bid > 0 else 0
         
         record = {
@@ -176,7 +176,7 @@ class TradeLogger:
         minute: int,
         reason: str,
     ) -> None:
-        """Log un trade skippé."""
+        """Log a skipped trade."""
         record = {
             "timestamp": datetime.utcnow().isoformat(),
             "event_type": "SKIP",

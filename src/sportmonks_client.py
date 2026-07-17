@@ -28,8 +28,8 @@ class LiveFixture:
     away_participant_id: Optional[int]
     events: list[dict]  # goal events only, sorted by sort_order
     league_name: str
-    starting_at_timestamp: Optional[int] = None  # Unix timestamp du début du match
-    minute: Optional[int] = None  # Minute actuelle calculée (si disponible)
+    starting_at_timestamp: Optional[int] = None  # Unix timestamp of match kickoff
+    minute: Optional[int] = None  # Current computed minute (if available)
 
 
 def _get_event_type_code(ev: dict) -> Optional[str]:

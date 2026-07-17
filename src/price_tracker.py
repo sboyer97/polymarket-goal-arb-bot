@@ -57,7 +57,7 @@ class PriceCurveAnalysis:
     price_at_0s: Optional[float] = None
     price_at_60s: Optional[float] = None
     price_at_120s: Optional[float] = None
-    # PnL réaliste: achat à l'ask, vente au bid
+    # Realistic PnL: buy at the ask, sell at the bid
     entry_ask_0s: Optional[float] = None
     exit_bid_60s: Optional[float] = None
     
@@ -83,18 +83,18 @@ class PriceTracker:
     
     # Gamma: gameId WebSocket ≠ event id. On utilise la ligue (chi/rus/kor) → tag_id pour lister les events.
     _sports_tag_cache: dict[str, int] = {}  # league -> tag_id (class var pour partage)
-    # Mapping codes WebSocket Polymarket → slug sport Gamma (quand différent)
+    # Mapping Polymarket WebSocket codes → Gamma sport slug (when different)
     LEAGUE_TO_GAMMA_SPORT: dict[str, str] = {
         "elc": "efl",   # Championship = EFL
         "bundesliga": "bun",
         "ligue1": "fl1",
         "laliga": "lal",
     }
-    # Quand slug = gameId numérique et ligue absente (WS n'a pas envoyé leagueAbbreviation), tenter ces ligues
+    # When slug = numeric gameId and league missing (WS didn't send leagueAbbreviation), try these leagues
     LEAGUES_TO_TRY_WHEN_UNKNOWN: tuple[str, ...] = (
         "epl", "lal", "bun", "fl1", "sea", "tur", "ere", "por", "mls", "ucl", "uel", "efa", "efl",
     )
-    # UCL: Gamma peut exposer le tag sous différents slugs
+    # UCL: Gamma may expose the tag under different slugs
     UCL_TAG_SLUGS: tuple[str, ...] = ("ucl", "uefa-champions-league", "champions-league")
     # Tag 100977 = matchs UCL (1234 = Winner / Top Scorer)
     UCL_MATCHES_TAG_ID: int = 100977
@@ -126,7 +126,7 @@ class PriceTracker:
 
     async def _get_event_by_slug_or_id(self, slug: str):
         """
-        Récupère un event Gamma par slug ou par id (gameId numérique).
+        Fetch a Gamma event by slug or by id (numeric gameId).
         Si Polymarket a le match (WebSocket), il existe sur Gamma : soit slug soit id.
         """
         if not slug:
@@ -152,12 +152,12 @@ class PriceTracker:
             return None
 
     def _normalize_league_for_gamma(self, league: str) -> str:
-        """WebSocket peut envoyer un code différent de Gamma (ex. elc vs efl)."""
+        """The WebSocket may send a different code than Gamma (e.g. elc vs efl)."""
         k = (league or "").strip().lower()
         return self.LEAGUE_TO_GAMMA_SPORT.get(k, k)
 
     async def _get_tag_id_for_league(self, league: str) -> Optional[int]:
-        """Récupère le tag_id Gamma pour une ligue (chi, rus, kor, epl, ...) via GET /sports."""
+        """Fetch the Gamma tag_id for a league (chi, rus, kor, epl, ...) via GET /sports."""
         if not league:
             return None
         league = self._normalize_league_for_gamma(league)
@@ -171,7 +171,7 @@ class PriceTracker:
             sports = r.json()
             if not isinstance(sports, list):
                 return None
-            # Tags génériques souvent en fin de liste (soccer général) ; on préfère le tag ligue-spécifique
+            # Generic tags often come last (general soccer); prefer the league-specific tag
             generic_tags = {1, 100639, 100350}
             for s in sports:
                 if (s.get("sport") or "").lower() == league:
@@ -179,7 +179,7 @@ class PriceTracker:
                     if tags:
                         parts = [int(p.strip()) for p in tags.split(",") if p.strip().isdigit()]
                         if parts:
-                            # Prendre le dernier tag non générique (ex. fl1→102070, efl→102595)
+                            # Take the last non-generic tag (e.g. fl1→102070, efl→102595)
                             for tid in reversed(parts):
                                 if tid not in generic_tags:
                                     self._sports_tag_cache[league] = tid
@@ -208,7 +208,7 @@ class PriceTracker:
             return []
 
     async def _get_events_by_tag_slug(self, tag_slug: str) -> list:
-        """GET /events?tag_slug=X&closed=false. Utilisé pour les ligues sans tag_id dédié (ex. rou1)."""
+        """GET /events?tag_slug=X&closed=false. Used for leagues without a dedicated tag_id (e.g. rou1)."""
         try:
             client = await self._get_client()
             r = await client.get(
@@ -227,7 +227,7 @@ class PriceTracker:
         self, league_slugs: Optional[set] = None
     ) -> list[dict]:
         """
-        Appel API Gamma: récupère tous les matchs en direct (closed=false) pour les ligues soccer.
+        Gamma API call: fetch all live matches (closed=false) for soccer leagues.
         Retourne une liste de {slug, home_team, away_team, league, score}.
         """
         if league_slugs is None:
@@ -258,7 +258,7 @@ class PriceTracker:
                 # UCL: utiliser le tag des matchs (100977), pas Winner/Top Scorer (1234)
                 if league == "ucl" and self.UCL_MATCHES_TAG_ID in parts:
                     tag_id = self.UCL_MATCHES_TAG_ID
-                # Ligues sans tag dédié (ex. rou1, chi1, col1) : tag_slug=league peut être vide.
+                # Leagues without a dedicated tag (e.g. rou1, chi1, col1): tag_slug=league may be empty.
                 if tag_id in generic_tags:
                     events = await self._get_events_by_tag_slug(league)
                     if not events:
@@ -276,19 +276,19 @@ class PriceTracker:
                         continue
                     title_raw = (ev.get("title") or "").strip()
                     if "halftime" in (title_raw or "").lower() or "halftime" in slug.lower():
-                        continue  # sous-marché (Halftime Result), pas le match principal
-                    # Ne garder que les matchs déjà commencés (startDate dans le passé)
+                        continue  # sub-market (Halftime Result), not the main match
+                    # Keep only matches that already kicked off (startDate in the past)
                     start_s = ev.get("startDate") or ev.get("start_date")
                     if not start_s:
-                        continue  # pas de date → on ne peut pas vérifier, on exclut
+                        continue  # no date → cannot verify, exclude
                     try:
                         start_dt = datetime.fromisoformat(str(start_s).replace("Z", "+00:00"))
                         if start_dt.tzinfo is None:
                             start_dt = start_dt.replace(tzinfo=timezone.utc)
                         if start_dt > datetime.now(timezone.utc):
-                            continue  # pas encore commencé
+                            continue  # not started yet
                     except (ValueError, TypeError):
-                        continue  # date invalide → on exclut par précaution
+                        continue  # invalid date → exclude to be safe
                     title = title_raw
                     if " vs. " in title:
                         parts_title = title.split(" vs. ", 1)
@@ -310,7 +310,7 @@ class PriceTracker:
                         "score": score,
                     })
             # Fallback EFL Championship: Polymarket utilise "elc" dans l'URL (elc-por-swa-...).
-            # Si /sports ne liste pas "elc" ou "efl", on récupère quand même les events par tag_slug "elc".
+            # Even if /sports does not list "elc" or "efl", still fetch events via tag_slug "elc".
             if "elc" in league_slugs or "efl" in league_slugs:
                 existing_slugs = {e["slug"] for e in out}
                 elc_events = await self._get_events_by_tag_slug("elc")
@@ -356,7 +356,7 @@ class PriceTracker:
             logger.debug(f"Gamma get_live_soccer_events: {e}")
         return out
 
-    # Abréviations pour slug Polymarket (efa FA Cup / elc Championship) : {league}-{home}-{away}-{YYYY-MM-DD}
+    # Abbreviations for Polymarket slugs (efa FA Cup / elc Championship): {league}-{home}-{away}-{YYYY-MM-DD}
     _POLY_SLUG_ABBREV: dict[str, str] = {
         "leeds united": "lee",
         "norwich city": "nor",
@@ -378,7 +378,7 @@ class PriceTracker:
     }
 
     def _team_abbrev_for_poly_slug(self, team_name: str) -> str:
-        """Abréviation 3 lettres pour slug Polymarket (efa/elc). Ex: Leeds United FC -> lee."""
+        """3-letter abbreviation for Polymarket slugs (efa/elc). E.g. Leeds United FC -> lee."""
         key = (team_name or "").strip().lower()
         for alias_key, abbrev in self._POLY_SLUG_ABBREV.items():
             if alias_key in key:
@@ -389,7 +389,7 @@ class PriceTracker:
         return words[0][:3] if len(words[0]) >= 3 else (words[0] + "x")[:3]
 
     def _team_abbrev_for_rou1(self, team_name: str) -> Optional[str]:
-        """Abréviation pour slug Polymarket rou1 (ex. CFR Cluj -> fcc, Dinamo București -> din)."""
+        """Abbreviation for Polymarket rou1 slugs (e.g. CFR Cluj -> fcc, Dinamo Bucuresti -> din)."""
         key = (team_name or "").strip().lower()
         for alias_key, abbrev in self._ROU1_POLY_ABBREV.items():
             if alias_key in key:
@@ -400,8 +400,8 @@ class PriceTracker:
         self, league_slug: str, home_team: str, away_team: str
     ) -> Optional[tuple[str, dict]]:
         """
-        Pour les ligues non listées par Gamma (ex. rou1), tente de retrouver l'event par slug.
-        Retourne (slug, event) si trouvé et les équipes matchent, sinon None.
+        For leagues not listed by Gamma (e.g. rou1), try to find the event by slug.
+        Returns (slug, event) if found and the teams match, otherwise None.
         """
         league_key = (league_slug or "").strip().lower()
         if league_key != "rou1":
@@ -421,7 +421,7 @@ class PriceTracker:
 
     async def _get_event_by_poly_slug(self, league: str, home_team: str, away_team: str):
         """
-        Récupère un event Gamma par slug Polymarket pour efa/elc.
+        Fetch a Gamma event by Polymarket slug for efa/elc.
         Format: {league}-{home_abbrev}-{away_abbrev}-{YYYY-MM-DD}
         Ex. efa-lee-nor-2026-03-07 (FA Cup), elc-qpr-mid-2026-03-08 (Championship).
         Polymarket utilise "elc" dans l'URL pour la Championship, pas "efl".
@@ -465,9 +465,9 @@ class PriceTracker:
     ) -> Optional[str]:
         """
         Find the token_id for "scoring team wins" market.
-        Essayer d'abord GET /events/{slug}, puis events par tag_id (ligue normalisée).
+        Try GET /events/{slug} first, then events by tag_id (normalized league).
         """
-        # 1) Direct: GET /events/{id} ou /events/slug/{slug} (pas de dépendance ligue)
+        # 1) Direct: GET /events/{id} or /events/slug/{slug} (no league dependency)
         ev = await self._get_event_by_slug_or_id(slug)
         if ev:
             for m in ev.get("markets", []):
@@ -500,7 +500,7 @@ class PriceTracker:
                         if idx < len(token_ids):
                             return token_ids[idx]
                         return token_ids[0] if scoring_team == "home" else token_ids[-1]
-        # 1c) Slug numérique sans ligue : tenter efa (FA Cup) puis elc (Championship) par slug avant tag_id
+        # 1c) Numeric slug without league: try efa (FA Cup) then elc (Championship) by slug before tag_id
         if slug and slug.isdigit() and not (league or "").strip():
             for cup_league in ("efa", "elc"):
                 ev = await self._get_event_by_poly_slug(cup_league, home_team, away_team)
@@ -518,14 +518,14 @@ class PriceTracker:
                                 return token_ids[idx]
                             return token_ids[0] if scoring_team == "home" else token_ids[-1]
 
-        # 2) Slug numérique + ligue OU ligue UCL (slug texte ucl-ata1-bay1-... peut échouer en GET direct) → events par tag
+        # 2) Numeric slug + league OR UCL league (text slug ucl-ata1-bay1-... may fail on direct GET) → events by tag
         leagues_to_try: list[str] = []
         if slug and slug.isdigit():
             if (league or "").strip():
                 leagues_to_try = [self._normalize_league_for_gamma(league)]
             else:
                 leagues_to_try = list(self.LEAGUES_TO_TRY_WHEN_UNKNOWN)
-        # UCL : même avec slug texte (ex. ucl-ata1-bay1-2026-03-10), tenter par tag_slug si pas trouvé en 1)
+        # UCL: even with a text slug (e.g. ucl-ata1-bay1-2026-03-10), try tag_slug if not found in 1)
         elif (league or "").strip() and self._normalize_league_for_gamma(league) == "ucl":
             leagues_to_try = ["ucl"]
         for leg in leagues_to_try:
@@ -600,7 +600,7 @@ class PriceTracker:
                 logger.debug(f"Gamma search failed: {e}")
 
         logger.info(
-            f"Marché non trouvé Gamma: slug={slug!r} home={home_team!r} away={away_team!r}"
+            f"Gamma market not found: slug={slug!r} home={home_team!r} away={away_team!r}"
         )
         return None
     
@@ -613,7 +613,7 @@ class PriceTracker:
     ) -> tuple[Optional[str], Optional[str], Optional[str]]:
         """
         Find token_id for Home, Draw, Away (3 outcomes).
-        Returns (token_home, token_draw, token_away). token_draw is None si marché 2 issues.
+        Returns (token_home, token_draw, token_away). token_draw is None for 2-outcome markets.
         """
         def _trio(token_ids: list) -> tuple[Optional[str], Optional[str], Optional[str]]:
             if len(token_ids) >= 3:
@@ -626,8 +626,8 @@ class PriceTracker:
             ev: dict, home_team: str, away_team: str
         ) -> tuple[Optional[str], Optional[str], Optional[str]] | None:
             """
-            Polymarket soccer: souvent 3 marchés Yes/No séparés (Home win, Draw, Away win).
-            On associe chaque marché à home/draw/away via la question, token Yes = premier token.
+            Polymarket soccer: often 3 separate Yes/No markets (Home win, Draw, Away win).
+            Each market is mapped to home/draw/away via its question, Yes token = first token.
             """
             home_upper = (home_team or "").upper()
             away_upper = (away_team or "").upper()
@@ -654,7 +654,7 @@ class PriceTracker:
                     elif aq and aq in q:
                         token_away = token_ids[0]
                     else:
-                        # Fallback: ordre des marchés = home, draw, away
+                        # Fallback: market order = home, draw, away
                         if token_home is None:
                             token_home = token_ids[0]
                         elif token_away is None:
@@ -664,7 +664,7 @@ class PriceTracker:
             return None
 
         def _best_trio(ev: dict, home_team: str, away_team: str) -> tuple[Optional[str], Optional[str], Optional[str]] | None:
-            """Un seul marché 3 issues > 3 marchés 1X2 (Home/Draw/Away) > premier marché 2 issues."""
+            """Single 3-outcome market > three 1X2 markets (Home/Draw/Away) > first 2-outcome market."""
             for m in ev.get("markets", []):
                 token_ids = m.get("clobTokenIds", "[]")
                 if isinstance(token_ids, str):
@@ -688,7 +688,7 @@ class PriceTracker:
                     return _trio(token_ids)
             return None
 
-        # 1) Essayer d'abord GET /events/{slug} (fonctionne quand slug = id Gamma, pas de dépendance ligue)
+        # 1) Try GET /events/{slug} first (works when slug = Gamma id, no league dependency)
         ev = await self._get_event_by_slug_or_id(slug)
         if ev:
             trio = _best_trio(ev, home_team, away_team)
@@ -701,7 +701,7 @@ class PriceTracker:
                 trio = _best_trio(ev, home_team, away_team)
                 if trio is not None:
                     return trio
-        # 1c) Slug numérique sans ligue : tenter efa (FA Cup) puis elc (Championship) par slug
+        # 1c) Numeric slug without league: try efa (FA Cup) then elc (Championship) by slug
         if slug and slug.isdigit() and not (league or "").strip():
             for cup_league in ("efa", "elc"):
                 ev = await self._get_event_by_poly_slug(cup_league, home_team, away_team)
@@ -709,7 +709,7 @@ class PriceTracker:
                     trio = _best_trio(ev, home_team, away_team)
                     if trio is not None:
                         return trio
-        # 2) Sinon: events par tag_id ou tag_slug (ligue normalisée; UCL etc. sans tag_id → tag_slug=league)
+        # 2) Otherwise: events by tag_id or tag_slug (normalized league; UCL etc. without tag_id → tag_slug=league)
         leagues_to_try: list[str] = []
         if slug and slug.isdigit():
             if (league or "").strip():
@@ -741,7 +741,7 @@ class PriceTracker:
             for ev in events_list:
                 if not self._event_matches_teams(ev, home_team, away_team):
                     continue
-                # Slug numérique = gameId WS : privilégier l'event dont gameId correspond
+                # Numeric slug = WS gameId: prefer the event whose gameId matches
                 if slug and slug.isdigit() and (ev.get("gameId") is not None):
                     if str(ev.get("gameId")) != slug:
                         continue
@@ -788,7 +788,7 @@ class PriceTracker:
             return None
 
     async def get_ask(self, token_id: str) -> Optional[float]:
-        """Prix à l'ask (side=BUY = meilleure offre à l'achat). Pour backtest réaliste."""
+        """Ask price (side=BUY = best offer to buy). For realistic backtesting."""
         try:
             client = await self._get_client()
             r = await client.get(f"{CLOB_URL}/price", params={"token_id": token_id, "side": "BUY"})
@@ -804,7 +804,7 @@ class PriceTracker:
             return None
 
     async def get_bid(self, token_id: str) -> Optional[float]:
-        """Prix au bid (side=SELL = meilleure offre à la vente)."""
+        """Bid price (side=SELL = best offer to sell)."""
         try:
             client = await self._get_client()
             r = await client.get(f"{CLOB_URL}/price", params={"token_id": token_id, "side": "SELL"})
@@ -820,7 +820,7 @@ class PriceTracker:
             return None
 
     async def get_price_for_record(self, token_id: str) -> Optional[float]:
-        """Prix pour enregistrement (backtest réaliste): ask si dispo, sinon midpoint."""
+        """Price to record (realistic backtest): ask if available, otherwise midpoint."""
         p = await self.get_ask(token_id)
         if p is not None:
             return p
@@ -1020,12 +1020,12 @@ class PriceTracker:
     def format_analysis_report(self, a: PriceCurveAnalysis) -> str:
         """Format analysis for WORK_LOG"""
         lines = [
-            f"### But: {a.home_team} vs {a.away_team} - {a.scoring_team} a marqué",
+            f"### Goal: {a.home_team} vs {a.away_team} - {a.scoring_team} scored",
             f"- **Prix T+0:** {a.price_at_0s:.1%}" if a.price_at_0s else "",
             f"- **Prix T+60:** {a.price_at_60s:.1%}" if a.price_at_60s else "",
             f"- **Stabilisation:** {a.time_to_stabilize_seconds}s" if a.time_to_stabilize_seconds else "- **Stabilisation:** N/A",
             f"- **Meilleur exit:** T+{a.max_price_seconds}s" if a.max_price_seconds else "",
             f"- **Profit T+0→60:** {a.profit_if_entry_0s_exit_60s:+.1f}%" if a.profit_if_entry_0s_exit_60s is not None else "",
-            f"- **Assez de temps pour trader?** {'✅ OUI' if (a.profit_if_entry_0s_exit_60s or 0) > 0 else '❌ NON' if a.market_found else '⚠️ Marché non trouvé'}",
+            f"- **Enough time to trade?** {'✅ YES' if (a.profit_if_entry_0s_exit_60s or 0) > 0 else '❌ NO' if a.market_found else '⚠️ Market not found'}",
         ]
         return "\n".join(l for l in lines if l)

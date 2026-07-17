@@ -22,25 +22,25 @@ See [RESULTS.md](RESULTS.md) for backtest and live-trading numbers.
 .
 ├── live_system.py          # Main live trading loop (goal → BUY → TP/SL/time exit)
 ├── main.py                 # CLI entrypoint (live/monitor/backtest/markets)
-├── monitor.py               # Standalone market/price monitor
-├── orchestrator.py / orchestrator_loop.py / run_agents.py
-│                            # Multi-agent loop that backtests and tunes
+├── monitor.py               # Standalone live-system monitor
+├── run_agents.py            # Multi-agent loop that backtests and tunes
 │                            # strategy parameters automatically
-├── agents/                  # Agent framework (data / strategy / code / reporter)
+├── agents/                  # Agent framework (orchestrator + specialized agents)
+│   ├── orchestrator.py       # Coordinates agents, task queue, project state
 │   ├── data_agent.py         # Collects & prepares historical match data
 │   ├── strategy_agent.py     # Runs backtests, grid-searches parameters
 │   ├── code_agent.py         # Applies best params back into config
 │   └── reporter_agent.py     # Generates iteration reports
 ├── src/
 │   ├── polymarket/client.py  # Polymarket CLOB client
-│   ├── data_provider/        # Pluggable data providers (Sportmonks, AllSportsAPI, mock)
+│   ├── data_provider/        # Pluggable data providers (AllSportsAPI, Sportradar)
+│   ├── sportmonks_client.py   # Sportmonks live-goal client
 │   ├── thesports_ws.py        # TheSports WebSocket client
 │   ├── trading/               # Trading engine + strategy logic
 │   ├── backtest/               # Backtest simulator + data loader
 │   ├── price_tracker.py        # Captures price curves around goal events
 │   └── team_matching.py        # Matches team names across data providers
-├── config/settings.py        # Pydantic settings (env-driven)
-└── docs/                     # Notes on data-provider integration/verification
+└── config/settings.py        # Pydantic settings (env-driven)
 ```
 
 ## A note on code state

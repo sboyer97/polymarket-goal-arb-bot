@@ -19,7 +19,6 @@ load_dotenv(Path(__file__).parent / ".env")
 
 from config.settings import settings
 from src.polymarket.client import PolymarketClient
-from src.data_provider.mock import MockDataProvider
 from src.data_provider.sportradar import SportradarProvider
 from src.data_provider.allsportsapi import AllSportsAPIProvider
 from src.trading.engine import TradingEngine
@@ -53,10 +52,9 @@ def cli():
 
 
 @cli.command()
-@click.option("--mock", is_flag=True, help="Use mock data provider for testing")
-@click.option("--provider", type=click.Choice(["allsportsapi", "mock"]), default="allsportsapi", help="Data provider to use")
+@click.option("--provider", type=click.Choice(["allsportsapi"]), default="allsportsapi", help="Data provider to use")
 @click.option("--dry-run/--live", default=True, help="Run in dry-run mode (no real trades)")
-def run(mock: bool, provider: str, dry_run: bool):
+def run(provider: str, dry_run: bool):
     """Run the trading bot"""
     
     if dry_run:
@@ -71,12 +69,8 @@ def run(mock: bool, provider: str, dry_run: bool):
     async def _run():
         polymarket = PolymarketClient()
         
-        if mock or provider == "mock":
-            data_provider = MockDataProvider(simulate_goals=True, goal_frequency_seconds=10)
-            console.print("[blue]Using mock data provider[/blue]")
-        else:
-            data_provider = AllSportsAPIProvider()
-            console.print("[blue]Using AllSportsAPI data provider (WebSocket)[/blue]")
+        data_provider = AllSportsAPIProvider()
+        console.print("[blue]Using AllSportsAPI data provider (WebSocket)[/blue]")
         
         strategy = GoalArbitrageStrategy()
         engine = TradingEngine(polymarket, data_provider, strategy)
@@ -318,57 +312,6 @@ def monitor(duration: int, league: str):
         await provider.disconnect()
     
     asyncio.run(_monitor())
-
-
-@cli.command()
-def simulate():
-    """Run a quick simulation with mock data"""
-    
-    async def _simulate():
-        polymarket = PolymarketClient()
-        data_provider = MockDataProvider(simulate_goals=True, goal_frequency_seconds=5)
-        
-        engine = TradingEngine(polymarket, data_provider)
-        
-        matches = await data_provider.get_live_matches()
-        
-        console.print("\n[cyan]Mock Matches:[/cyan]")
-        table = Table()
-        table.add_column("Match ID")
-        table.add_column("Home")
-        table.add_column("Away")
-        table.add_column("Score")
-        
-        for match in matches:
-            table.add_row(
-                match.match_id,
-                match.home_team,
-                match.away_team,
-                f"{match.home_score} - {match.away_score}"
-            )
-        
-        console.print(table)
-        
-        for match in matches[:2]:
-            engine.link_match_to_market(match.match_id, f"mock_market_{match.match_id}")
-        
-        console.print("\n[green]Starting 30-second simulation...[/green]")
-        console.print("[dim]Press Ctrl+C to stop early[/dim]\n")
-        
-        async def stop_after_delay():
-            await asyncio.sleep(30)
-            await engine.stop()
-        
-        try:
-            asyncio.create_task(stop_after_delay())
-            await engine.start()
-        except KeyboardInterrupt:
-            await engine.stop()
-        
-        stats = engine.get_stats()
-        console.print(f"\n[cyan]Simulation complete. Total trades: {stats.get('total_trades', 0)}[/cyan]")
-    
-    asyncio.run(_simulate())
 
 
 @cli.command()

@@ -24,14 +24,14 @@ notif_settings = NotificationSettings()
 
 
 def _chat_ids() -> list[str]:
-    """Liste des chat_id (plusieurs possibles, séparés par des virgules dans .env)."""
+    """List of chat_ids (multiple allowed, comma-separated in .env)."""
     raw = (notif_settings.telegram_chat_id or "").strip()
     if not raw:
         return []
     return [c.strip() for c in raw.split(",") if c.strip()]
 
 
-# Client HTTP réutilisable (évite overhead de connexion)
+# Reusable HTTP client (avoids connection overhead)
 _http_client: Optional[httpx.AsyncClient] = None
 
 
@@ -43,7 +43,7 @@ async def _get_client() -> httpx.AsyncClient:
 
 
 async def _send_telegram(message: str) -> bool:
-    """Envoie un message Telegram à tous les chat_id configurés."""
+    """Send a Telegram message to every configured chat_id."""
     if not notif_settings.telegram_bot_token:
         return False
     chat_ids = _chat_ids()
@@ -93,7 +93,7 @@ def notify_trade(
         score: Score actuel "1-0"
         amount_usd: Montant en USD
         shares: Nombre de shares
-        price: Prix d'entrée/sortie
+        price: Entry/exit price
         pnl_pct: P&L en pourcentage (pour SELL)
         reason: Raison (pour SKIP)
     """
@@ -156,7 +156,7 @@ def notify_error(error: str, context: str = "") -> None:
 
 
 def notify_system(message: str) -> None:
-    """Notifie un événement système (démarrage, arrêt, etc.)."""
+    """Notify a system event (startup, shutdown, etc.)."""
     if not notif_settings.notifications_enabled:
         return
     msg = f"🤖 <b>SYSTÈME</b>\n{message}"
@@ -164,14 +164,14 @@ def notify_system(message: str) -> None:
 
 
 def notify_sell_failed(match: str, remaining_shares: float, slug: str = "") -> None:
-    """Notifie qu'on n'a pas réussi à vendre (position restante)."""
+    """Notify that a sell failed (position still open)."""
     if not notif_settings.notifications_enabled:
         return
     msg = (
         "⚠️ <b>VENTE ÉCHOUÉE</b>\n"
         f"🏟️ {match}\n"
         f"📉 Position restante: <b>{remaining_shares:.2f} shares</b>\n"
-        f"→ Vérifier manuellement sur Polymarket."
+        f"→ Check manually on Polymarket."
     )
     if slug:
         msg += f"\n📍 Slug: {slug}"
@@ -182,7 +182,7 @@ def notify_matches_followed(matches: list[str]) -> None:
     """Notifie la liste des matchs en live (flux WS avec period/elapsed)."""
     if not notif_settings.notifications_enabled or not matches:
         return
-    lines = [f"• {m}" for m in matches[:30]]  # max 30 pour éviter message trop long
+    lines = [f"• {m}" for m in matches[:30]]  # cap at 30 to keep the message short
     if len(matches) > 30:
         lines.append(f"… et {len(matches) - 30} autre(s)")
     msg = f"📺 <b>Matchs en live</b> ({len(matches)})\n\n" + "\n".join(lines)

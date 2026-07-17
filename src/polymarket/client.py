@@ -310,13 +310,13 @@ class PolymarketClient:
     async def place_sell_with_fallback(
         self, token_id: str, sell_size: float
     ) -> Optional[dict]:
-        """SELL FOK simple. Si échec, retry après set_allowances."""
+        """Simple FOK SELL. On failure, retry after set_allowances."""
         # 1) FOK market SELL direct
         result = await self.place_market_order("SELL", token_id, sell_size)
         if result and (result.get("orderID") or result.get("success")):
             return result
         
-        # 2) Si échec, refresh allowances et retry
+        # 2) On failure, refresh allowances and retry
         logger.warning(f"FOK SELL failed, retrying after set_allowances...")
         await self.set_allowances()
         await self.update_balance_allowance(token_id)
@@ -327,7 +327,7 @@ class PolymarketClient:
     async def place_market_order(
         self, side: str, token_id: str, amount: float
     ) -> Optional[dict]:
-        """Place a FOK market order. OPTIMISÉ LATENCE. BUY: amount = USD. SELL: amount = shares."""
+        """Place a FOK market order. LATENCY-OPTIMIZED. BUY: amount = USD. SELL: amount = shares."""
         if settings.trading.dry_run:
             return {"orderID": "dry_run", "success": True}
         if not self._clob_client:
@@ -359,7 +359,7 @@ class PolymarketClient:
         if not self._clob_client or not order_id or str(order_id) == "dry_run":
             return None
         deadline = asyncio.get_event_loop().time() + timeout_seconds
-        poll_interval = 0.05  # 50ms pour latence minimale
+        poll_interval = 0.05  # 50ms for minimal latency
         while asyncio.get_event_loop().time() < deadline:
             try:
                 order = await asyncio.to_thread(self._clob_client.get_order, order_id)
