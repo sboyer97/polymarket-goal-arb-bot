@@ -15,7 +15,7 @@ from typing import Callable, Optional
 import paho.mqtt.client as mqtt
 from loguru import logger
 
-# Code type incident TheSports pour les buts
+# TheSports incident type code for goals
 INCIDENT_GOAL = 1
 
 
@@ -172,7 +172,7 @@ def _process_payload(
 ) -> None:
     """
     Handles the legacy payload format (dict with score/scores entry list, incidents).
-    Appelle les callbacks via run_coroutine_threadsafe depuis le thread MQTT.
+    Invokes callbacks via run_coroutine_threadsafe from the MQTT thread.
     """
     score_list = data.get("score") or data.get("scores")
     if not isinstance(score_list, list):

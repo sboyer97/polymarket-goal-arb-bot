@@ -170,7 +170,7 @@ class SportmonksClient:
         if not self.api_token:
             return []
         client = await self._ensure_client()
-        # Include scores, participants, events (buts), league. Pas de select/field filter sur livescores (400).
+        # Include scores, participants, events (goals), league. No select/field filter on livescores (400).
         url = self._url(
             "livescores/inplay",
             include="scores;participants;events.type;league",

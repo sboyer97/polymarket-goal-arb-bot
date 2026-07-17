@@ -192,7 +192,7 @@ class PriceTracker:
             return None
 
     async def _get_events_by_tag_id(self, tag_id: int) -> list:
-        """GET /events?tag_id=X&closed=false pour les matchs en cours."""
+        """GET /events?tag_id=X&closed=false for in-progress matches."""
         try:
             client = await self._get_client()
             r = await client.get(
@@ -720,7 +720,7 @@ class PriceTracker:
             leagues_to_try = ["ucl"]
         for leg in leagues_to_try:
             events_list: list = []
-            # UCL: toujours utiliser le tag des matchs (100977), pas Winner/Top Scorer
+            # UCL: always use the matches tag (100977), not Winner/Top Scorer
             if leg == "ucl":
                 events_list = await self._get_events_by_tag_id(self.UCL_MATCHES_TAG_ID)
             else:

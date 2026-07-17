@@ -64,7 +64,7 @@ class TradeLogger:
         self._pending_trades: dict[str, dict] = {}  # slug -> trade data
     
     def _write_record(self, record: dict) -> None:
-        """Écrit un record JSON (fire-and-forget via thread)."""
+        """Write a JSON record (fire-and-forget via thread)."""
         try:
             with open(self._log_file, "a") as f:
                 f.write(json.dumps(record, ensure_ascii=False) + "\n")

@@ -89,7 +89,7 @@ def notify_trade(
     Args:
         event_type: "BUY", "SELL", "TP", "SL", "TIMEOUT", "SKIP"
         match: "Home vs Away"
-        team: Équipe sur laquelle on parie
+        team: Team we are betting on
         score: Score actuel "1-0"
         amount_usd: Montant en USD
         shares: Nombre de shares
@@ -135,7 +135,7 @@ def notify_trade(
         )
     elif event_type == "GOAL":
         msg = (
-            f"{emoji} <b>BUT DÉTECTÉ</b>\n"
+            f"{emoji} <b>GOAL DETECTED</b>\n"
             f"🏟️ {match}\n"
             f"📊 Score: <b>{score}</b>"
         )
@@ -159,7 +159,7 @@ def notify_system(message: str) -> None:
     """Notify a system event (startup, shutdown, etc.)."""
     if not notif_settings.notifications_enabled:
         return
-    msg = f"🤖 <b>SYSTÈME</b>\n{message}"
+    msg = f"🤖 <b>SYSTEM</b>\n{message}"
     asyncio.create_task(_send_telegram(msg))
 
 
@@ -168,7 +168,7 @@ def notify_sell_failed(match: str, remaining_shares: float, slug: str = "") -> N
     if not notif_settings.notifications_enabled:
         return
     msg = (
-        "⚠️ <b>VENTE ÉCHOUÉE</b>\n"
+        "⚠️ <b>SELL FAILED</b>\n"
         f"🏟️ {match}\n"
         f"📉 Position restante: <b>{remaining_shares:.2f} shares</b>\n"
         f"→ Check manually on Polymarket."
@@ -190,11 +190,11 @@ def notify_matches_followed(matches: list[str]) -> None:
 
 
 def notify_goal(match: str, score: str, minute: str = "", source: str = "") -> None:
-    """Notifie un but sur un match suivi (fire-and-forget)."""
+    """Notify a goal on a followed match (fire-and-forget)."""
     if not notif_settings.notifications_enabled:
         return
     msg = (
-        "⚽ <b>BUT</b> sur un match suivi\n"
+        "⚽ <b>GOAL</b> on a followed match\n"
         f"🏟️ {match}\n"
         f"📊 Score: <b>{score}</b>"
     )

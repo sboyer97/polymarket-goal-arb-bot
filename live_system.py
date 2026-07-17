@@ -36,7 +36,7 @@ from rich.console import Console
 
 from config.settings import settings
 
-# Forcer DRY_RUN depuis l'env (évite souci de préfixe TRADING_ / parsing pydantic)
+# Force DRY_RUN from env (avoids TRADING_ prefix / pydantic parsing issues)
 _dry_run_env = os.environ.get("DRY_RUN") or os.environ.get("TRADING_DRY_RUN") or ""
 if _dry_run_env.strip().lower() in ("false", "0", "no", "off"):
     settings.trading.dry_run = False
@@ -63,7 +63,7 @@ CONSOLE_LOG_FILE = DATA_DIR / "console.log"
 
 
 class _Tee:
-    """Écrit vers le stream d'origine et vers un fichier."""
+    """Write to the original stream and to a file."""
     def __init__(self, stream, path: Path):
         self._stream = stream
         self._path = path
@@ -93,7 +93,7 @@ class _Tee:
 sys.stdout = _Tee(sys.__stdout__, CONSOLE_LOG_FILE)
 sys.stderr = _Tee(sys.__stderr__, CONSOLE_LOG_FILE)
 
-# Log file dédié (loguru) pour debug TP/SL
+# Dedicated log file (loguru) for TP/SL debugging
 LOG_FILE = DATA_DIR / "live_system.log"
 logger.add(LOG_FILE, rotation="10 MB", retention="3 days", level="DEBUG")
 
@@ -144,7 +144,7 @@ class LiveTradingSystem:
     
     def __init__(self, bet_amount: float = 5.0, exit_after: int = 120):
         self.bet_amount = bet_amount
-        self.exit_after = exit_after  # time exit après N secondes (TP/SL peuvent sortir avant)
+        self.exit_after = exit_after  # time exit after N seconds (TP/SL can exit earlier)
         
         self._ws = None
         self._running = False
@@ -181,15 +181,15 @@ class LiveTradingSystem:
         self._realtime_csv = DATA_DIR / f"live_prices_realtime_{datetime.now().strftime('%Y%m%d')}.csv"
         self._realtime_csv_initialized = False
         
-        # Sportmonks: détection des buts (au lieu de Polymarket)
+        # Sportmonks: goal detection (instead of Polymarket)
         self._sportmonks_token = (os.environ.get("SPORTMONKS_API_TOKEN") or "").strip()
         self._sportmonks_client: Optional[SportmonksClient] = None
         self._sportmonks_seen_goals: set[tuple[int, int]] = set()  # (fixture_id, event_id)
         self._sportmonks_last_score: dict[int, tuple[int, int]] = {}  # fixture_id -> (home, away)
         self._sportmonks_last_matched_count: Optional[int] = None  # pour n'afficher le nb de matchs que quand il change
-        self._sportmonks_seen_score_goals: set[tuple[int, str]] = set()  # (fixture_id, "h-1-1") pour éviter doublon
+        self._sportmonks_seen_score_goals: set[tuple[int, str]] = set()  # (fixture_id, "h-1-1") to avoid duplicates
         self._sportmonks_poll_interval = 0.15  # 150 ms — pas d'appel API si _matches vide
-        # TheSports MQTT over WebSockets (priorité sur Sportmonks pour la détection buts)
+        # TheSports MQTT over WebSockets (takes priority over Sportmonks for goal detection)
         self._thesports_host = (os.environ.get("THESPORTS_HOST") or os.environ.get("THESPORTS_WS_URL") or "mq.thesports.com").strip()
         if self._thesports_host.startswith("wss://"):
             self._thesports_host = self._thesports_host.replace("wss://", "").split("/")[0]
@@ -203,21 +203,21 @@ class LiveTradingSystem:
         self._thesports_secret = (os.environ.get("THESPORTS_SECRET") or os.environ.get("THESPORTS_API_SECRET") or "").strip()
         self._thesports_topic = (os.environ.get("THESPORTS_TOPIC") or "").strip()
         self._thesports_last_scores: dict[str, tuple[int, int]] = {}
-        # TheSports match id -> (home_team, away_team) pour résoudre les events MQTT (rempli par API REST)
+        # TheSports match id -> (home_team, away_team) to resolve MQTT events (filled via REST API)
         self._thesports_id_to_teams: dict[str, tuple[str, str]] = {}
         self._thesports_api_match_list_url = (os.environ.get("THESPORTS_API_MATCH_LIST_URL") or "").strip()
         # Schedule and Results (date query) : https://www.thesports.com/fr/docs/football → BASIC DATA
         self._thesports_api_schedule_url = (os.environ.get("THESPORTS_API_SCHEDULE_URL") or "").strip()
-        # Dédupe buts vus par les sources (TheSports, Sportmonks — plus Polymarket WS pour les buts)
-        self._goal_seen: set = set()  # (slug, score) pour buts
+        # Dedupe goals seen across sources (TheSports, Sportmonks — plus Polymarket WS for goals)
+        self._goal_seen: set = set()  # (slug, score) for goals
         # Un seul BUY par but: (home_team, away_team, new_score)
         self._goals_traded: set[tuple[str, str, str]] = set()
-        # Cache des minutes actuelles des matchs (mis à jour en background, pas de latence sur le BUY)
+        # Cache of current match minutes (updated in background, no latency on the BUY path)
         self._match_current_minute: dict[str, int] = {}  # slug -> minute actuelle du match
-        self._match_minute_max_staleness = 10  # Tolérance en minutes pour un but "récent"
-        # Dernier set de slugs notifié (matchs suivis) pour ne notifier que quand la liste change
+        self._match_minute_max_staleness = 10  # Tolerance in minutes for a "recent" goal
+        # Last notified set of slugs (followed matches) so we only notify when the list changes
         self._last_notified_match_slugs: Optional[frozenset] = None
-        # CSV: heure de détection (TheSports, Sportmonks); delta TheSports vs Sportmonks (écrit en async, pas sur le chemin critique)
+        # CSV: detection time (TheSports, Sportmonks); TheSports vs Sportmonks delta (written async, off the critical path)
         self._goal_detection_csv = DATA_DIR / f"goal_detection_times_{datetime.now().strftime('%Y%m%d')}.csv"
         self._goal_delta_csv = DATA_DIR / f"goal_delta_thesports_sportmonks_{datetime.now().strftime('%Y%m%d')}.csv"
         self._goal_detection_pending: dict[tuple[str, str], dict] = {}  # (slug, score) -> { thesports_ts, sportmonks_ts, ... }
@@ -289,7 +289,7 @@ class LiveTradingSystem:
         home_team: str,
         away_team: str,
     ):
-        """Enregistre l'heure de détection (TheSports / Sportmonks). CSV quand on a les 2. Delta (TheSports vs Sportmonks) en async."""
+        """Record detection time (TheSports / Sportmonks). CSV once both are in. Delta (TheSports vs Sportmonks) written async."""
         now_iso = datetime.now(timezone.utc).isoformat()
         key = (slug, score_str)
         if key not in self._goal_detection_pending:
@@ -326,7 +326,7 @@ class LiveTradingSystem:
                     ])
             except OSError:
                 pass
-            # Enqueue delta pour écriture async (pas sur le chemin critique)
+            # Enqueue delta for async write (off the critical path)
             if thesports_ts and sportmonks_ts:
                 try:
                     t1 = datetime.fromisoformat(thesports_ts.replace("Z", "+00:00"))
@@ -346,7 +346,7 @@ class LiveTradingSystem:
             del self._goal_detection_pending[key]
 
     def _flush_goal_detection_pending(self):
-        """Écrit les buts en attente (une seule source) après 120s pour ne pas perdre de données."""
+        """Flush pending goals (single source) after 120s so no data is lost."""
         now = datetime.now(timezone.utc)
         to_remove = []
         for key, rec in list(self._goal_detection_pending.items()):
@@ -398,7 +398,7 @@ class LiveTradingSystem:
             pass
 
     async def _goal_delta_writer_loop(self):
-        """Écrit les deltas TheSports/Sportmonks en async (hors chemin critique)."""
+        """Write TheSports/Sportmonks deltas async (off the critical path)."""
         while self._running:
             try:
                 row = await asyncio.wait_for(self._goal_delta_queue.get(), timeout=5.0)
@@ -434,7 +434,7 @@ class LiveTradingSystem:
             logger.debug(f"Token warm for {slug}: {e}")
 
     def _ensure_realtime_csv(self):
-        """Create realtime CSV with header only if file missing or empty (ne pas écraser au redémarrage)."""
+        """Create realtime CSV with header only if file missing or empty (do not overwrite on restart)."""
         if self._realtime_csv_initialized:
             return
         self._realtime_csv_initialized = True
@@ -488,36 +488,36 @@ class LiveTradingSystem:
         clob_ok = getattr(self._polymarket, "_clob_client", None) is not None
         logger.info(f"DRY_RUN={settings.trading.dry_run} | CLOB init={clob_ok} → live_mode={live_mode}")
         
-        # Set allowances au démarrage pour éviter les erreurs "not enough balance/allowance" sur SELL
+        # Set allowances at startup to avoid "not enough balance/allowance" errors on SELL
         if live_mode:
             try:
                 await self._polymarket.set_allowances()
-                logger.info("Allowances initialisées au démarrage")
+                logger.info("Allowances initialized at startup")
             except Exception as e:
-                logger.warning(f"set_allowances au démarrage: {e}")
+                logger.warning(f"set_allowances at startup: {e}")
         
-        # Notification démarrage du bot (toujours, fire-and-forget)
+        # Bot startup notification (always, fire-and-forget)
         bet_display = min(self.bet_amount, settings.trading.max_position_size_usdc)
         mode_msg = f"Mode: LIVE | Bet: ${bet_display}" if live_mode else "Mode: BACKTEST (DRY_RUN)"
-        notify_system(f"🟢 Bot démarré\n{mode_msg}")
+        notify_system(f"🟢 Bot started\n{mode_msg}")
         
         if not live_mode:
             if settings.trading.dry_run:
                 console.print("[yellow]→ Mode backtest car DRY_RUN=true dans .env. Mettre DRY_RUN=false pour trader.[/yellow]")
             elif not clob_ok:
-                console.print("[yellow]→ Mode backtest car CLOB non initialisé. Vérifier POLYMARKET_PRIVATE_KEY et POLYMARKET_SMART_WALLET dans .env sur le serveur.[/yellow]")
+                console.print("[yellow]→ Backtest mode because CLOB is not initialized. Check POLYMARKET_PRIVATE_KEY and POLYMARKET_SMART_WALLET in .env on the server.[/yellow]")
         bet_display = min(self.bet_amount, settings.trading.max_position_size_usdc) if live_mode else self.bet_amount
         console.print(Panel.fit(
             "[bold cyan]🤖 Live System[/bold cyan]\n\n"
-            + ("[red]LIVE TRADING - Ordres réels Polymarket[/red]\n\n" if live_mode else "[yellow]BACKTEST ONLY - Aucun trading réel[/yellow]\n\n")
+            + ("[red]LIVE TRADING - Real Polymarket orders[/red]\n\n" if live_mode else "[yellow]BACKTEST ONLY - No real trading[/yellow]\n\n")
             + f"Bet Amount: ${bet_display}\n"
             + f"Exit After: {self.exit_after}s\n"
             + f"CSV: {self._csv_file.name}\n\n"
-            + "[dim]Données 100% réelles (Polymarket)[/dim]",
+            + "[dim]100% real data (Polymarket)[/dim]",
             title="Starting",
         ))
         if not settings.trading.dry_run and not live_mode:
-            console.print("[yellow]DRY_RUN=false mais CLOB non initialisé (POLYMARKET_PRIVATE_KEY manquant?) — pas d'ordres réels[/yellow]")
+            console.print("[yellow]DRY_RUN=false but CLOB not initialized (POLYMARKET_PRIVATE_KEY missing?) — no real orders[/yellow]")
         
         # Au relance: vider la liste (pas d'anciens matchs). On ne charge que via le WebSocket.
         self._matches.clear()
@@ -526,7 +526,7 @@ class LiveTradingSystem:
         self._goals_traded.clear()
         self._write_matches_file()
         
-        # Start background tasks (chacune encapsulée pour ne jamais faire crasher le processus)
+        # Start background tasks (each wrapped so it can never crash the process)
         async def _run_task(name: str, coro_func):
             while self._running:
                 try:
@@ -546,7 +546,7 @@ class LiveTradingSystem:
             asyncio.create_task(_run_task("improvement", self._improvement_loop)),
             asyncio.create_task(_run_task("goal_delta_writer", self._goal_delta_writer_loop)),
         ]
-        # TheSports en premier (priorité latence), puis Sportmonks
+        # TheSports first (latency priority), then Sportmonks
         if self._thesports_user and self._thesports_secret and self._thesports_topic:
             tasks.insert(0, asyncio.create_task(_run_task("thesports_ws", self._thesports_ws_loop)))
             if self._thesports_api_schedule_url or self._thesports_api_match_list_url:
@@ -559,9 +559,9 @@ class LiveTradingSystem:
         if self._sportmonks_token:
             sources.append("Sportmonks")
         if sources:
-            console.print("[dim]Détection buts: " + " + ".join(sources) + " (Polymarket WS désactivé pour buts)[/dim]")
+            console.print("[dim]Goal detection: " + " + ".join(sources) + " (Polymarket WS disabled for goals)[/dim]")
         else:
-            console.print("[yellow]THESPORTS_* ou SPORTMONKS_API_TOKEN — pas de détection buts[/yellow]")
+            console.print("[yellow]THESPORTS_* or SPORTMONKS_API_TOKEN missing — no goal detection[/yellow]")
         
         try:
             await asyncio.gather(*tasks)
@@ -587,7 +587,7 @@ class LiveTradingSystem:
         return _teams_match_fn(a, b)
 
     def _match_is_live(self, m: dict) -> bool:
-        """True si le match a un flux live (period/elapsed du WS Polymarket) et n'est pas terminé."""
+        """True if the match has a live feed (period/elapsed from Polymarket WS) and is not finished."""
         if m.get("ended_at"):
             return False
         period = (m.get("period") or "").strip().upper()
@@ -596,7 +596,7 @@ class LiveTradingSystem:
 
     def _find_slug_by_teams(self, home_team: str, away_team: str) -> Optional[str]:
         """Find Polymarket match slug from home/away team names (from _matches).
-        Priorité: 1) matchs en live (period/elapsed), 2) tout match dont les équipes matchent (ex. UCL pas encore marqué live par le WS)."""
+        Priority: 1) live matches (period/elapsed), 2) any match whose teams match (e.g. UCL not yet flagged live by the WS)."""
         if not (home_team or "").strip() and not (away_team or "").strip():
             return None
         # 1) D'abord les matchs en live
@@ -605,7 +605,7 @@ class LiveTradingSystem:
                 continue
             if self._team_names_match(home_team, m.get("home_team", "")) and self._team_names_match(away_team, m.get("away_team", "")):
                 return slug
-        # 2) Sinon tout match qui matche les équipes (ex. Galatasaray - Liverpool UCL listé par Gamma mais WS pas encore en live)
+        # 2) Otherwise any match whose teams match (e.g. Galatasaray - Liverpool UCL listed by Gamma but WS not live yet)
         for slug, m in self._matches.items():
             m_home = (m.get("home_team") or "").strip()
             m_away = (m.get("away_team") or "").strip()
@@ -617,10 +617,10 @@ class LiveTradingSystem:
 
     async def _try_resolve_and_add_match_from_sportmonks(self, f) -> Optional[str]:
         """
-        Si le match Sportmonks n'est pas dans _matches (ex. rou1 pas listé par Gamma/WS),
-        tente de le retrouver sur Gamma par slug (ex. rou1-fcc-din-2026-03-09) et l'ajoute à _matches.
-        Retourne le slug si trouvé, sinon None.
-        On tente toujours rou1 par noms d'équipes (Cluj, Dinamo...) — pas de filtre ligue Sportmonks.
+        If the Sportmonks match is not in _matches (e.g. rou1 not listed by Gamma/WS),
+        try to find it on Gamma by slug (e.g. rou1-fcc-din-2026-03-09) and add it to _matches.
+        Returns the slug if found, otherwise None.
+        Always try rou1 by team names (Cluj, Dinamo...) — no Sportmonks league filter.
         """
         result = await self._price_tracker.try_resolve_slug_for_teams("rou1", f.home_team, f.away_team)
         if result is None:
@@ -646,7 +646,7 @@ class LiveTradingSystem:
             "last_update": datetime.now(timezone.utc).isoformat(),
         }
         asyncio.create_task(self._warm_token_cache_for_slug(slug, f.home_team, f.away_team, "rou1"))
-        logger.info(f"Match rou1 résolu via Gamma (Sportmonks): {f.home_team} - {f.away_team} -> {slug}")
+        logger.info(f"rou1 match resolved via Gamma (Sportmonks): {f.home_team} - {f.away_team} -> {slug}")
         return slug
 
     async def _sportmonks_goal_poll(self):
@@ -657,7 +657,7 @@ class LiveTradingSystem:
                     await asyncio.sleep(60)
                     continue
                 if not self._matches:
-                    await asyncio.sleep(5)  # Pas d'appel API tant qu'on ne suit aucun match
+                    await asyncio.sleep(5)  # No API call while no match is followed
                     continue
                 if self._sportmonks_client is None:
                     self._sportmonks_client = SportmonksClient(api_token=self._sportmonks_token)
@@ -669,8 +669,8 @@ class LiveTradingSystem:
                 if matched != self._sportmonks_last_matched_count:
                     self._sportmonks_last_matched_count = matched
                     if matched > 0:
-                        logger.info(f"Sportmonks: {matched} match(s) correspondent à un match Polymarket suivi")
-                # Mise à jour du cache des minutes (background, pas de latence sur BUY)
+                        logger.info(f"Sportmonks: {matched} match(es) map to a followed Polymarket match")
+                # Update the minutes cache (background, no latency on BUY)
                 for f in fixtures:
                     slug = self._find_slug_by_teams(f.home_team, f.away_team)
                     if slug and hasattr(f, "minute") and f.minute:
@@ -679,7 +679,7 @@ class LiveTradingSystem:
                         except (ValueError, TypeError):
                             pass
                 
-                # 1) Détection par changement de score (réactivité immédiate dès que l’API met à jour le score)
+                # 1) Detection via score change (immediate reaction as soon as the API updates the score)
                 for f in fixtures:
                     slug = self._find_slug_by_teams(f.home_team, f.away_team)
                     if not slug:
@@ -705,13 +705,13 @@ class LiveTradingSystem:
                             new_score = f"{nh}-{na}"
                             ts = datetime.now(timezone.utc).strftime("%H:%M:%S.") + f"{datetime.now(timezone.utc).microsecond // 1000:03d}"
                             already = (slug, new_score) in self._goal_seen
-                            console.print(f"[yellow][Sportmonks][/yellow] BUT à {ts} — {f.home_team} {new_score} {f.away_team}" + (" [dim](déjà enregistré)[/dim]" if already else ""))
+                            console.print(f"[yellow][Sportmonks][/yellow] GOAL at {ts} — {f.home_team} {new_score} {f.away_team}" + (" [dim](already recorded)[/dim]" if already else ""))
                             self._record_goal_detection_ts("sportmonks", slug, new_score, f.home_team, f.away_team)
                             if already:
                                 continue
                             self._goal_seen.add((slug, new_score))
                             league = (self._matches.get(slug) or {}).get("league", "") or (f.league_name or "sportmonks").strip().lower()[:20]
-                            logger.info(f"But Sportmonks (score): {f.home_team} {new_score} {f.away_team} ({scoring_team}) -> slug {slug}")
+                            logger.info(f"Sportmonks goal (score): {f.home_team} {new_score} {f.away_team} ({scoring_team}) -> slug {slug}")
                             await self._on_goal(
                                 slug=slug,
                                 league=league,
@@ -723,7 +723,7 @@ class LiveTradingSystem:
                                 new_score=new_score,
                                 source="Sportmonks",
                             )
-                # 2) Détection par event (backup si l’event arrive avant la mise à jour du score)
+                # 2) Detection via event (backup if the event arrives before the score update)
                 for f in fixtures:
                     for ev in f.events:
                         eid = ev.get("id")
@@ -733,7 +733,7 @@ class LiveTradingSystem:
                         if key in self._sportmonks_seen_goals:
                             continue
                         self._sportmonks_seen_goals.add(key)
-                        # Nouveau but (event) — ne pas refire si déjà traité par détection score
+                        # New goal (event) — do not re-fire if already handled by score detection
                         new_score_ev = f"{f.home_score}-{f.away_score}"
                         if (f.fixture_id, new_score_ev) in self._sportmonks_seen_score_goals:
                             continue
@@ -742,20 +742,20 @@ class LiveTradingSystem:
                         if not slug:
                             slug = await self._try_resolve_and_add_match_from_sportmonks(f)
                         if not slug:
-                            logger.debug(f"But Sportmonks sans match Polymarket: {f.home_team} - {f.away_team}")
+                            logger.debug(f"Sportmonks goal with no Polymarket match: {f.home_team} - {f.away_team}")
                             continue
                         team_id = ev.get("team_id")
                         if team_id is not None and f.home_participant_id is not None and f.away_participant_id is not None:
                             scoring_team = "home" if int(team_id) == f.home_participant_id else "away"
                         else:
-                            # Fallback: déduire qui a marqué depuis le résultat de l'event
+                            # Fallback: infer who scored from the event result
                             scoring_team = None
                             if ev.get("result"):
                                 try:
                                     parts = str(ev["result"]).strip().split("-")
                                     if len(parts) == 2:
                                         ev_h, ev_a = int(parts[0]), int(parts[1])
-                                        # Comparer avec le score précédent connu
+                                        # Compare against the last known score
                                         prev = self._sportmonks_last_score.get(f.fixture_id, (0, 0))
                                         ph, pa = prev
                                         if ev_h > ph and ev_a == pa:
@@ -764,7 +764,7 @@ class LiveTradingSystem:
                                             scoring_team = "away"
                                 except (ValueError, TypeError):
                                     pass
-                            # Si toujours pas déterminé, déduire depuis le score actuel
+                            # If still undetermined, infer from the current score
                             if scoring_team is None:
                                 prev = self._sportmonks_last_score.get(f.fixture_id, (0, 0))
                                 ph, pa = prev
@@ -774,8 +774,8 @@ class LiveTradingSystem:
                                 elif na > pa and nh == ph:
                                     scoring_team = "away"
                                 else:
-                                    # Cas ambigu: on ne peut pas déterminer, skip cet event
-                                    logger.warning(f"Sportmonks event: impossible de déterminer qui a marqué (prev={ph}-{pa}, cur={nh}-{na})")
+                                    # Ambiguous case: cannot determine, skip this event
+                                    logger.warning(f"Sportmonks event: cannot determine who scored (prev={ph}-{pa}, cur={nh}-{na})")
                                     continue
                         minute = str(ev.get("minute") or "")
                         if ev.get("extra_minute"):
@@ -796,13 +796,13 @@ class LiveTradingSystem:
                             old_score = f"{f.home_score - (1 if scoring_team == 'home' else 0)}-{f.away_score - (1 if scoring_team == 'away' else 0)}"
                         ts = datetime.now(timezone.utc).strftime("%H:%M:%S.") + f"{datetime.now(timezone.utc).microsecond // 1000:03d}"
                         already = (slug, new_score) in self._goal_seen
-                        console.print(f"[yellow][Sportmonks][/yellow] BUT à {ts} — {f.home_team} {new_score} {f.away_team}" + (" [dim](déjà enregistré)[/dim]" if already else ""))
+                        console.print(f"[yellow][Sportmonks][/yellow] GOAL at {ts} — {f.home_team} {new_score} {f.away_team}" + (" [dim](already recorded)[/dim]" if already else ""))
                         self._record_goal_detection_ts("sportmonks", slug, new_score, f.home_team, f.away_team)
                         if already:
                             continue
                         self._goal_seen.add((slug, new_score))
                         league = (self._matches.get(slug) or {}).get("league", "") or (f.league_name or "sportmonks").strip().lower()[:20]
-                        logger.info(f"But Sportmonks: {f.home_team} {new_score} {f.away_team} ({scoring_team}) -> slug {slug}")
+                        logger.info(f"Sportmonks goal: {f.home_team} {new_score} {f.away_team} ({scoring_team}) -> slug {slug}")
                         await self._on_goal(
                             slug=slug,
                             league=league,
@@ -830,11 +830,11 @@ class LiveTradingSystem:
         minute: str,
         old_score: str,
     ):
-        """Callback appelé par le WebSocket TheSports quand un but est détecté. Optimisé pour latence minimale."""
-        # --- CHEMIN CRITIQUE: slug lookup synchrone, pas de log avant le trade ---
+        """Callback invoked by the TheSports WebSocket when a goal is detected. Optimized for minimal latency."""
+        # --- CRITICAL PATH: synchronous slug lookup, no logging before the trade ---
         slug = self._find_slug_by_teams(home_team, away_team)
         if not slug:
-            # Fallback async si pas trouvé - on lance en tâche pour ne pas bloquer
+            # Async fallback if not found - run as a task so we do not block
             asyncio.create_task(self._on_thesports_goal_fallback(
                 home_team, away_team, new_score, scoring_team, minute, old_score
             ))
@@ -857,11 +857,11 @@ class LiveTradingSystem:
             source="TheSports",
             trade_trigger="goal",
         ))
-        # Logs APRÈS le create_task (non bloquant)
+        # Logs AFTER create_task (non-blocking)
         now = datetime.now(timezone.utc)
         ts = now.strftime("%H:%M:%S.") + f"{now.microsecond // 1000:03d}"
-        console.print(f"[green][TheSports][/green] BUT à {ts} — {home_team} {new_score} {away_team}")
-        logger.info(f"But TheSports: {home_team} {new_score} {away_team} ({scoring_team}) -> slug {slug}")
+        console.print(f"[green][TheSports][/green] GOAL at {ts} — {home_team} {new_score} {away_team}")
+        logger.info(f"TheSports goal: {home_team} {new_score} {away_team} ({scoring_team}) -> slug {slug}")
         self._record_goal_detection_ts("thesports", slug, new_score, home_team, away_team)
 
     async def _on_thesports_goal_fallback(
@@ -873,11 +873,11 @@ class LiveTradingSystem:
         minute: str,
         old_score: str,
     ):
-        """Fallback si slug non trouvé: résolution async puis trade."""
+        """Fallback when slug not found: async resolution then trade."""
         slug = await self._try_resolve_and_add_match_from_sportmonks_thesports(home_team, away_team, new_score)
         if not slug:
             logger.info(
-                "TheSports but: event reçu mais match non listé sur Polymarket — {} - {}",
+                "TheSports goal: event received but match not listed on Polymarket — {} - {}",
                 home_team, away_team,
             )
             return
@@ -888,8 +888,8 @@ class LiveTradingSystem:
         league = (self._matches.get(slug) or {}).get("league", "") or "thesports"
         now = datetime.now(timezone.utc)
         ts = now.strftime("%H:%M:%S.") + f"{now.microsecond // 1000:03d}"
-        console.print(f"[green][TheSports][/green] BUT à {ts} — {home_team} {new_score} {away_team} (fallback)")
-        logger.info(f"But TheSports (fallback): {home_team} {new_score} {away_team} ({scoring_team}) -> slug {slug}")
+        console.print(f"[green][TheSports][/green] GOAL at {ts} — {home_team} {new_score} {away_team} (fallback)")
+        logger.info(f"TheSports goal (fallback): {home_team} {new_score} {away_team} ({scoring_team}) -> slug {slug}")
         self._record_goal_detection_ts("thesports", slug, new_score, home_team, away_team)
         await self._on_goal(
             slug=slug,
@@ -906,19 +906,19 @@ class LiveTradingSystem:
 
     @staticmethod
     def _teams_match(h1: str, a1: str, h2: str, a2: str) -> bool:
-        """True si les paires (h1,a1) et (h2,a2) désignent le même match."""
+        """True if pairs (h1,a1) and (h2,a2) refer to the same match."""
         return _teams_match_fn(h1, h2) and _teams_match_fn(a1, a2)
 
     async def _try_resolve_and_add_match_from_sportmonks_thesports(
         self, home_team: str, away_team: str, score_str: str
     ) -> Optional[str]:
-        """TheSports/Sportmonks (noms d'équipes) → slug Polymarket. 1) Match dans _matches (Gamma). 2) Sinon rou1."""
+        """TheSports/Sportmonks (team names) → Polymarket slug. 1) Match in _matches (Gamma). 2) Otherwise rou1."""
         home_team = (home_team or "").strip()
         away_team = (away_team or "").strip()
         if not home_team or not away_team:
             return None
-        # 1) Déjà suivi via Gamma : matcher TheSports ↔ Polymarket par noms d'équipes.
-        # Même critère strict (_team_names_match). Priorité: matchs en live, puis tout match qui matche (ex. UCL).
+        # 1) Already followed via Gamma: match TheSports ↔ Polymarket by team names.
+        # Same strict criterion (_team_names_match). Priority: live matches, then any team match (e.g. UCL).
         for slug, info in self._matches.items():
             if not self._match_is_live(info):
                 continue
@@ -935,7 +935,7 @@ class LiveTradingSystem:
                 continue
             if self._team_names_match(home_team, m_home) and self._team_names_match(away_team, m_away):
                 return slug
-        # 2) Résolution rou1 (et autres ligues si on étend try_resolve_slug_for_teams)
+        # 2) rou1 resolution (and other leagues if try_resolve_slug_for_teams is extended)
         result = await self._price_tracker.try_resolve_slug_for_teams("rou1", home_team, away_team)
         if result is None:
             return None
@@ -966,7 +966,7 @@ class LiveTradingSystem:
         return self._thesports_id_to_teams.get((match_id or "").strip())
 
     def _thesports_parse_matches_into_cache(self, data: dict) -> int:
-        """Parse une réponse API (results/data/matches) avec home_team/away_team dans chaque item. Retourne le nb ajouté."""
+        """Parse an API response (results/data/matches) with home_team/away_team per item. Returns count added."""
         items = (
             data.get("results")
             if isinstance(data.get("results"), list)
@@ -991,7 +991,7 @@ class LiveTradingSystem:
         return n
 
     def _thesports_parse_diary_into_cache(self, data: dict) -> int:
-        """Parse la réponse diary (results + results_extra.team list). Format date yyyymmdd. Retourne le nb ajouté."""
+        """Parse the diary response (results + results_extra.team list). Date format yyyymmdd. Returns count added."""
         results = data.get("results")
         if not isinstance(results, list):
             return 0
@@ -1053,7 +1053,7 @@ class LiveTradingSystem:
                 except Exception as e:
                     logger.debug("TheSports Schedule (date=%s): %s", date_str, e)
 
-        # Liste de matchs (URL fixe) si configurée
+        # Match list (fixed URL) if configured
         if self._thesports_api_match_list_url:
             try:
                 url = self._thesports_api_match_list_url
@@ -1071,7 +1071,7 @@ class LiveTradingSystem:
             logger.debug("TheSports match cache: {} match(s)", len(self._thesports_id_to_teams))
 
     async def _thesports_refresh_match_cache_loop(self):
-        """Rafraîchit le cache match_id -> (home_team, away_team) toutes les 2 min si une URL API est définie."""
+        """Refresh the match_id -> (home_team, away_team) cache every 2 min if an API URL is set."""
         while self._running:
             await self._thesports_refresh_match_cache()
             for _ in range(120):
@@ -1080,7 +1080,7 @@ class LiveTradingSystem:
                 await asyncio.sleep(1)
 
     async def _thesports_ws_loop(self):
-        """WebSocket TheSports — détection buts en priorité (avant Sportmonks)."""
+        """TheSports WebSocket — primary goal detection (ahead of Sportmonks)."""
         if not self._thesports_user or not self._thesports_secret or not self._thesports_topic:
             await asyncio.sleep(3600)
             return
@@ -1099,19 +1099,19 @@ class LiveTradingSystem:
         )
 
     def _event_has_started(self, ev: dict) -> bool:
-        """True seulement si l'event a commencé et n'est pas encore terminé (Gamma = matchs en cours uniquement)."""
+        """True only if the event has started and is not finished yet (Gamma = in-progress matches only)."""
         now = datetime.now(timezone.utc)
         start_s = ev.get("startDate") or ev.get("start_date")
         end_s = ev.get("endDate") or ev.get("end_date")
         try:
-            # Pas encore commencé
+            # Not started yet
             if start_s:
                 start_dt = datetime.fromisoformat(start_s.replace("Z", "+00:00"))
                 if start_dt.tzinfo is None:
                     start_dt = start_dt.replace(tzinfo=timezone.utc)
                 if start_dt > now:
-                    return False  # pas encore commencé
-            # Déjà terminé
+                    return False  # not started yet
+            # Already finished
             if end_s:
                 end_dt = datetime.fromisoformat(end_s.replace("Z", "+00:00"))
                 if end_dt.tzinfo is None:
@@ -1123,7 +1123,7 @@ class LiveTradingSystem:
         return True
 
     def _event_has_ended(self, ev: dict) -> bool:
-        """True si l'event est terminé (endDate dans le passé)."""
+        """True if the event is finished (endDate in the past)."""
         end_s = ev.get("endDate") or ev.get("end_date")
         if not end_s:
             return False
@@ -1137,10 +1137,10 @@ class LiveTradingSystem:
             return False
 
     async def _fetch_live_matches_from_gamma(self) -> int:
-        """1) Appel API Gamma: ajoute tous les matchs soccer en direct. 2) Retire les matchs terminés / stale."""
+        """1) Gamma API call: add all live soccer matches. 2) Remove finished / stale matches."""
         added = 0
         try:
-            # 1) Récupérer tous les matchs en live via l'API Gamma (pas seulement le WebSocket)
+            # 1) Fetch all live matches via the Gamma API (not just the WebSocket)
             events = await self._price_tracker.get_live_soccer_events_from_gamma(
                 league_slugs=set(self.SOCCER_LEAGUES),
             )
@@ -1171,13 +1171,13 @@ class LiveTradingSystem:
                 }
                 added += 1
                 asyncio.create_task(self._warm_token_cache_for_slug(slug, home_team, away_team, league or None))
-                logger.info(f"Match ajouté via API Gamma: {home_team} - {away_team} ({league})")
+                logger.info(f"Match added via Gamma API: {home_team} - {away_team} ({league})")
             if added > 0:
                 self._write_matches_file()
         except Exception as e:
             logger.debug(f"Gamma fetch live: {e}")
 
-        # 2) Retirer les matchs terminés (closed/endDate) ou sans mise à jour depuis > 45 min
+        # 2) Remove matches finished (closed/endDate) or not updated for > 45 min
         if self._http is None:
             self._http = httpx.AsyncClient(timeout=15.0)
         finished_slugs: set[str] = set()
@@ -1230,7 +1230,7 @@ class LiveTradingSystem:
         return added
     
     async def _collect_data(self):
-        """Collect live data from Polymarket - reconnecte automatiquement si déconnexion."""
+        """Collect live data from Polymarket - reconnects automatically on disconnect."""
         while self._running:
             try:
                 async with websockets.connect(
@@ -1241,19 +1241,19 @@ class LiveTradingSystem:
                 ) as ws:
                     self._ws = ws
                     console.print("[green]✓ Connected to Polymarket[/green]")
-                    console.print("[dim]En attente du flux (matchs soccer)...[/dim]")
+                    console.print("[dim]Waiting for feed (soccer matches)...[/dim]")
                     async for message in ws:
                         if not self._running:
                             break
                         await self._handle_message(message)
             except websockets.ConnectionClosed as e:
                 if self._running:
-                    logger.warning(f"WebSocket déconnecté ({e.code}), reconnexion dans 5s...")
-                    console.print("[yellow]⚠ Déconnecté, reconnexion dans 5s...[/yellow]")
+                    logger.warning(f"WebSocket disconnected ({e.code}), reconnecting in 5s...")
+                    console.print("[yellow]⚠ Disconnected, reconnecting in 5s...[/yellow]")
                     await asyncio.sleep(5)
             except (OSError, ConnectionError) as e:
                 if self._running:
-                    logger.warning(f"Réseau: {e}, reconnexion dans 10s...")
+                    logger.warning(f"Network: {e}, reconnecting in 10s...")
                     await asyncio.sleep(10)
             except Exception as e:
                 if self._running:
@@ -1271,7 +1271,7 @@ class LiveTradingSystem:
         except json.JSONDecodeError:
             return
         
-        # Feedback: flux actif dès le premier message reçu
+        # Feedback: feed active as soon as the first message arrives
         if not self._first_message_received:
             self._first_message_received = True
             console.print("[green]✓ Flux Polymarket actif[/green]")
@@ -1296,7 +1296,7 @@ class LiveTradingSystem:
         if not slug:
             return
         
-        # Ne garder que les matchs en cours (pas à venir, pas terminés)
+        # Keep only in-progress matches (not upcoming, not finished)
         event_state = data.get("eventState") or {}
         status = (data.get("status") or event_state.get("status") or "").strip().lower()
         live = data.get("live", event_state.get("live", False))
@@ -1305,17 +1305,17 @@ class LiveTradingSystem:
         elapsed = (data.get("elapsed") or event_state.get("elapsed") or "")
         elapsed_str = str(elapsed).strip() if elapsed is not None else ""
         if ended:
-            # Garder le match 5 min après "ended" pour continuer à enregistrer les prix (realtime CSV)
+            # Keep the match 5 min after "ended" to keep recording prices (realtime CSV)
             if slug in self._matches:
                 self._matches[slug]["ended_at"] = datetime.now(timezone.utc).isoformat()
-                logger.info(f"Match terminé (ended): {slug}, on garde 5 min pour enregistrement prix")
+                logger.info(f"Match finished (ended): {slug}, keeping 5 min for price recording")
             if game_id is not None and str(game_id) in self._matches and str(game_id) != slug:
                 self._matches[str(game_id)]["ended_at"] = datetime.now(timezone.utc).isoformat()
             return
         # Score: top-level ou dans eventState; normaliser (espaces, tirets Unicode) — on en a besoin pour in_progress_score
         score_str = (data.get("score") or event_state.get("score") or "0-0").strip()
         score_str = score_str.replace("\u2013", "-").replace("\u2014", "-").replace(" ", "")
-        # Accepter si en cours: live OU status inprogress OU period (1H/2H/HT) / elapsed OU score ≠ 0-0 (match a commencé)
+        # Accept if in progress: live OR status inprogress OR period (1H/2H/HT) / elapsed OR score ≠ 0-0 (match started)
         in_progress_status = status in ("inprogress", "in progress", "live")
         in_progress_period = period in ("1H", "2H", "HT") or bool(elapsed_str)
         try:
@@ -1326,7 +1326,7 @@ class LiveTradingSystem:
         if not live and not in_progress_status and not in_progress_period and not in_progress_score:
             return
         
-        # (score_str déjà normalisé ci-dessus)
+        # (score_str already normalized above)
         try:
             parts = score_str.split("-")
             home_score = int(parts[0].strip()) if parts else 0
@@ -1338,10 +1338,10 @@ class LiveTradingSystem:
         away_team = data.get("awayTeam", "")
         period = data.get("period") or event_state.get("period", "")
         elapsed = (data.get("elapsed") or event_state.get("elapsed") or "").strip()
-        # Affichage brut: period + elapsed (ex. "2H 46"), pas d'ajout de temps selon la période
+        # Raw display: period + elapsed (e.g. "2H 46"), no time added based on the period
         minute_display = f"{period} {elapsed}".strip() if elapsed else period
         
-        # Ancien état: sous slug ou sous gameId (au cas où la clé change entre messages)
+        # Previous state: under slug or gameId (in case the key changes between messages)
         old_state = self._matches.get(slug)
         if old_state is None and game_id is not None:
             old_state = self._matches.get(str(game_id))
@@ -1349,18 +1349,18 @@ class LiveTradingSystem:
                 self._matches[slug] = old_state
                 del self._matches[str(game_id)]
         
-        # Ne pas écraser avec un message plus ancien (score total qui baisse)
+        # Do not overwrite with an older message (total score going down)
         cur = self._matches.get(slug)
         if cur:
             cur_total = cur.get("home_score", 0) + cur.get("away_score", 0)
             new_total = home_score + away_score
             if new_total < cur_total:
                 return
-            # But: on ne déclenche plus _on_goal depuis Polymarket WS (TheSports + Sportmonks uniquement)
-            # On met quand même à jour l'état du match ci-dessous.
+            # Note: _on_goal is no longer triggered from Polymarket WS (TheSports + Sportmonks only)
+            # Match state is still updated below.
         is_new = slug not in self._matches
         
-        # Mise à jour état du match (period + elapsed pour le monitor)
+        # Update match state (period + elapsed for the monitor)
         self._matches[slug] = {
             "home_team": home_team,
             "away_team": away_team,
@@ -1372,7 +1372,7 @@ class LiveTradingSystem:
             "last_update": datetime.now(timezone.utc).isoformat(),
         }
         
-        # Mise à jour du cache des minutes pour vérification fraîcheur des buts
+        # Update the minutes cache for goal freshness checks
         if elapsed:
             try:
                 min_val = int(str(elapsed).split("+")[0].strip())
@@ -1384,7 +1384,7 @@ class LiveTradingSystem:
         
         if is_new:
             asyncio.create_task(self._warm_token_cache_for_slug(slug, home_team, away_team, league or None))
-            console.print(f"[dim]Match suivi: {home_team} - {away_team} ({league}) {score_str} {minute_display or period}[/dim]")
+            console.print(f"[dim]Match followed: {home_team} - {away_team} ({league}) {score_str} {minute_display or period}[/dim]")
         
         # Write matches for monitor (throttled in _write_matches_file)
         self._write_matches_file()
@@ -1421,9 +1421,9 @@ class LiveTradingSystem:
                        force_bet_draw: Optional[bool] = None,
                        trade_key_override: Optional[tuple[str, str, str]] = None,
                        trade_trigger: Optional[str] = None):
-        """Handle a detected goal. OPTIMISÉ LATENCE: BUY immédiat, logs après.
-        force_bet_draw: si True, parier sur le nul; si False, ignorer nul; si None, logique score.
-        trade_key_override: si fourni, utilisé pour dédup.
+        """Handle a detected goal. LATENCY-OPTIMIZED: BUY first, logs after.
+        force_bet_draw: if True, bet on the draw; if False, ignore the draw; if None, score logic.
+        trade_key_override: if provided, used for dedup.
         """
         # --- CHEMIN CRITIQUE: calcul synchrone, BUY en premier ---
         token_home, token_draw, token_away = self._token_cache.get(slug, (None, None, None))
@@ -1432,7 +1432,7 @@ class LiveTradingSystem:
         skip_reason = ""
         h, a = 0, 0
         
-        # Vérification fraîcheur: le but ne doit pas être trop ancien par rapport à la minute actuelle du match
+        # Freshness check: the goal must not be too old relative to the current match minute
         goal_minute = 0
         try:
             goal_minute = int(str(minute).replace("'", "").strip().split("+")[0])
@@ -1443,14 +1443,14 @@ class LiveTradingSystem:
             staleness = cached_minute - goal_minute
             if staleness > self._match_minute_max_staleness:
                 skip_bet = True
-                skip_reason = f"but obsolète (minute {goal_minute}, match à {cached_minute})"
-                logger.warning(f"BUT OBSOLÈTE détecté: {home_team} vs {away_team} - minute but={goal_minute}, minute match actuelle={cached_minute} (staleness={staleness})")
+                skip_reason = f"stale goal (minute {goal_minute}, match at {cached_minute})"
+                logger.warning(f"STALE GOAL detected: {home_team} vs {away_team} - goal minute={goal_minute}, current match minute={cached_minute} (staleness={staleness})")
         
-        # STRATÉGIE:
-        # - Score devient NUL (égalisation) → parier sur le NUL (sa cote monte)
-        # - L'équipe qui marque MÈNE → parier sur ELLE (momentum, sa cote monte)
-        # - L'équipe qui marque ne mène pas → skip
-        bet_team = scoring_team  # L'équipe qui vient de marquer
+        # STRATEGY:
+        # - Score becomes a DRAW (equalizer) → bet on the DRAW (its odds rise)
+        # - Scoring team LEADS → bet on THEM (momentum, their odds rise)
+        # - Scoring team does not lead → skip
+        bet_team = scoring_team  # The team that just scored
         bet_on_draw = False
         
         try:
@@ -1458,22 +1458,22 @@ class LiveTradingSystem:
             if len(parts) == 2:
                 h, a = int(parts[0].strip()), int(parts[1].strip())
                 
-                # Score nul (égalisation) → parier sur le NUL
+                # Draw score (equalizer) → bet on the DRAW
                 if not skip_bet and h == a and h > 0:
                     bet_on_draw = True
                 
-                # Skip si écart >= 2 (match probablement plié, cote trop basse)
+                # Skip if margin >= 2 (match likely decided, odds too low)
                 if not skip_bet and not bet_on_draw and abs(h - a) >= 2:
                     skip_bet = True
-                    skip_reason = f"écart >= 2 ({new_score})"
+                    skip_reason = f"margin >= 2 ({new_score})"
                 
-                # Skip si l'équipe qui marque ne mène pas (toujours perdante)
+                # Skip if the scoring team is not leading (still losing)
                 if not skip_bet and not bet_on_draw:
                     scorer_goals = h if scoring_team == "home" else a
                     opponent_goals = a if scoring_team == "home" else h
                     if scorer_goals < opponent_goals:
                         skip_bet = True
-                        skip_reason = f"équipe qui marque toujours perdante ({new_score})"
+                        skip_reason = f"scoring team still losing ({new_score})"
                 
                 # Filtre minute minimum
                 if not skip_bet and goal_minute > 0:
@@ -1485,21 +1485,21 @@ class LiveTradingSystem:
         except (ValueError, TypeError):
             pass
         
-        # Token: NUL si égalisation, sinon l'équipe qui marque (momentum)
+        # Token: DRAW if equalizer, otherwise the scoring team (momentum)
         if bet_on_draw and token_draw:
             token_id = token_draw
-            bet_label = "nul"
+            bet_label = "draw"
         else:
             token_id = token_home if bet_team == "home" else token_away
             bet_label = bet_team
         trade_key = trade_key_override or (home_team.strip(), away_team.strip(), new_score.strip())
         already_traded = trade_key in self._goals_traded
-        # Conditions de trade (check rapide en mémoire)
+        # Trade conditions (fast in-memory check)
         clob_ready = not settings.trading.dry_run and getattr(self._polymarket, "_clob_client", None)
         match_live = self._match_is_live(self._matches.get(slug) or {}) if slug else False
         uptime_ok = self._start_time and (datetime.now(timezone.utc) - self._start_time).total_seconds() >= 10
         want_trade = clob_ready and not already_traded and not skip_bet and uptime_ok and match_live
-        # --- BUY IMMÉDIAT (avant tout log) ---
+        # --- IMMEDIATE BUY (before any logging) ---
         if want_trade:
             self._goals_traded.add(trade_key)
             asyncio.create_task(self._place_live_entry_and_schedule_exit(
@@ -1511,7 +1511,7 @@ class LiveTradingSystem:
                 score=new_score,
                 minute=goal_minute,
             ))
-        # --- APRÈS BUY: logs, record, display (non bloquant) ---
+        # --- AFTER BUY: logs, record, display (non-blocking) ---
         goal_ts_utc = datetime.now(timezone.utc)
         goal = GoalRecord(
             timestamp=goal_ts_utc,
@@ -1527,27 +1527,27 @@ class LiveTradingSystem:
         self._goals.append(goal)
         scorer = home_team if scoring_team == "home" else away_team
         bet_team_name = home_team if bet_team == "home" else away_team
-        console.print(f"\n[bold green]⚽ BUT DÉTECTÉ[/bold green] [dim]({source})[/dim]")
-        console.print(f"   {home_team} {new_score} {away_team} ({scorer} marque) — [cyan]{minute}[/cyan]")
-        # Notif but sur match suivi (fire-and-forget)
+        console.print(f"\n[bold green]⚽ GOAL DETECTED[/bold green] [dim]({source})[/dim]")
+        console.print(f"   {home_team} {new_score} {away_team} ({scorer} scores) — [cyan]{minute}[/cyan]")
+        # Goal notification on a followed match (fire-and-forget)
         notify_goal(f"{home_team} vs {away_team}", new_score, minute=str(minute), source=source)
         if want_trade:
             if bet_on_draw:
-                console.print(f"   [dim]→ ÉGALISATION: pari sur [bold]NUL[/bold][/dim]")
+                console.print(f"   [dim]→ EQUALIZER: betting on the [bold]DRAW[/bold][/dim]")
             else:
-                console.print(f"   [dim]→ MOMENTUM: pari sur [bold]{bet_team_name}[/bold] ({bet_team})[/dim]")
+                console.print(f"   [dim]→ MOMENTUM: betting on [bold]{bet_team_name}[/bold] ({bet_team})[/dim]")
         if skip_bet and skip_reason:
             console.print(f"   [dim]→ Skip: {skip_reason}[/dim]")
-            logger.info(f"But ignoré ({skip_reason}): {home_team} {new_score} {away_team}")
-            # Logging structuré + notification (fire-and-forget, pas de latence)
+            logger.info(f"Goal skipped ({skip_reason}): {home_team} {new_score} {away_team}")
+            # Structured logging + notification (fire-and-forget, no latency)
             trade_logger.log_skip(slug, home_team, away_team, new_score, goal_minute, skip_reason)
             notify_trade("SKIP", f"{home_team} vs {away_team}", "", new_score, 0, reason=skip_reason)
         elif not match_live:
-            logger.info("Pas de pari: match pas encore en live — {}", slug)
+            logger.info("No bet: match not live yet — {}", slug)
         if already_traded:
-            logger.info(f"But déjà tradé (autre source) — {home_team} {new_score} {away_team}")
+            logger.info(f"Goal already traded (other source) — {home_team} {new_score} {away_team}")
         if token_id is None and want_trade:
-            logger.warning(f"Token cache miss pour {slug} — résolution async")
+            logger.warning(f"Token cache miss for {slug} — async resolution")
         asyncio.create_task(self._track_prices_after_goal(
             goal, slug, home_team, away_team, scoring_team, league=league, token_id=token_id
         ))
@@ -1562,14 +1562,14 @@ class LiveTradingSystem:
         score: str = "",
         minute: int = 0,
     ):
-        """Place un market order BUY (FOK). OPTIMISÉ LATENCE. Si token_id is None, résolution async."""
+        """Place a market BUY order (FOK). LATENCY-OPTIMIZED. If token_id is None, resolve async."""
         import time
         t_start = time.perf_counter()
-        # Check rapide en mémoire (pas de latence)
+        # Fast in-memory check (no latency)
         if slug and not self._match_is_live(self._matches.get(slug) or {}):
-            logger.info("BUY annulé: match pas en live — {}", slug)
+            logger.info("BUY cancelled: match not live — {}", slug)
             return
-        # Résolution token si cache miss (ajoute latence mais inévitable)
+        # Token resolution on cache miss (adds latency but unavoidable)
         if token_id is None:
             m = self._matches.get(slug) or {}
             resolve_home = (m.get("home_team") or "").strip() or home_team
@@ -1578,20 +1578,20 @@ class LiveTradingSystem:
                 slug, resolve_home, resolve_away, league=league or ""
             )
             self._token_cache[slug] = (token_home, token_draw, token_away)
-            # MOMENTUM: on parie sur l'équipe qui marque (bet_label contient déjà la bonne équipe)
+            # MOMENTUM: bet on the scoring team (bet_label already holds the right team)
             token_id = token_home if bet_label == "home" else (token_away if bet_label == "away" else token_draw)
             if not token_id:
-                logger.warning("BUY annulé: pas de token pour {}", slug)
+                logger.warning("BUY cancelled: no token for {}", slug)
                 return
         
-        # --- CHECK LIQUIDITÉ ---
+        # --- LIQUIDITY CHECK ---
         min_liquidity = getattr(settings.trading, "min_liquidity_usd", 50.0)
         if min_liquidity > 0:
             try:
                 bid_price = await self._polymarket.get_best_bid(token_id)
                 if bid_price is None or bid_price <= 0:
-                    logger.warning(f"BUY annulé: pas de bid pour {slug}")
-                    console.print(f"[yellow]BUY annulé: pas de liquidité — {bet_label}[/yellow]")
+                    logger.warning(f"BUY cancelled: no bid for {slug}")
+                    console.print(f"[yellow]BUY cancelled: no liquidity — {bet_label}[/yellow]")
                     return
             except Exception as e:
                 logger.debug(f"get_best_bid: {e}")
@@ -1601,9 +1601,9 @@ class LiveTradingSystem:
         result = await self._polymarket.place_market_order("BUY", token_id, size_usd)
         order_id = (result or {}).get("orderID") or (result or {}).get("order_id")
         
-        # --- VÉRIFICATION SI ÉCHEC APPARENT ---
+        # --- VERIFY ON APPARENT FAILURE ---
         async def check_actual_position() -> Optional[float]:
-            """Vérifie si on a une position malgré un échec apparent."""
+            """Check whether we hold a position despite an apparent failure."""
             await asyncio.sleep(1.0)
             try:
                 pos = await self._polymarket.get_position_size(token_id)
@@ -1612,10 +1612,10 @@ class LiveTradingSystem:
                 return None
         
         if not order_id:
-            console.print("[yellow]BUY FOK timeout, vérification position...[/yellow]")
+            console.print("[yellow]BUY FOK timeout, checking position...[/yellow]")
             actual_pos = await check_actual_position()
             if actual_pos:
-                console.print(f"[green]Position trouvée! {actual_pos:.1f} shares — {bet_label}[/green]")
+                console.print(f"[green]Position found! {actual_pos:.1f} shares — {bet_label}[/green]")
                 self._live_orders[slug] = {
                     "order_id": "recovered",
                     "token_id": token_id,
@@ -1625,16 +1625,16 @@ class LiveTradingSystem:
                 }
                 asyncio.create_task(self._exit_live_trade_tp_sl_loop(slug))
                 return
-            console.print("[red]Échec BUY confirmé[/red]")
+            console.print("[red]BUY failure confirmed[/red]")
             return
         
         # FOK: poll rapide (50ms) pour le fill
         fill_info = await self._polymarket.get_order_fill_info(order_id, timeout_seconds=2.0)
         if not fill_info:
-            console.print(f"[yellow]BUY FOK timeout, vérification position...[/yellow]")
+            console.print(f"[yellow]BUY FOK timeout, checking position...[/yellow]")
             actual_pos = await check_actual_position()
             if actual_pos:
-                console.print(f"[green]Position trouvée! {actual_pos:.1f} shares — {bet_label}[/green]")
+                console.print(f"[green]Position found! {actual_pos:.1f} shares — {bet_label}[/green]")
                 self._live_orders[slug] = {
                     "order_id": order_id,
                     "token_id": token_id,
@@ -1644,15 +1644,15 @@ class LiveTradingSystem:
                 }
                 asyncio.create_task(self._exit_live_trade_tp_sl_loop(slug))
                 return
-            logger.warning(f"BUY FOK non exécuté — {slug}")
-            console.print(f"[red]BUY non exécuté (FOK kill) — {bet_label}[/red]")
+            logger.warning(f"BUY FOK not executed — {slug}")
+            console.print(f"[red]BUY not executed (FOK kill) — {bet_label}[/red]")
             return
         
         size_shares, entry_price = fill_info
         size_shares = max(1, int(round(size_shares)))
         latency_ms = (time.perf_counter() - t_start) * 1000
         
-        # Déterminer la stratégie pour le logging
+        # Determine the strategy label for logging
         strategy = "draw" if bet_on_draw else "momentum"
         bet_on = "draw" if bet_on_draw else bet_label
         
@@ -1671,7 +1671,7 @@ class LiveTradingSystem:
         }
         console.print(f"[green]BUY OK — {size_shares} @ {entry_price:.2f} — {bet_label} ({latency_ms:.0f}ms)[/green]")
         
-        # Logging structuré + notification (fire-and-forget)
+        # Structured logging + notification (fire-and-forget)
         amount_usd = size_shares * entry_price
         trade_logger.log_entry(
             slug=slug, home_team=home_team, away_team=away_team, score=score,
@@ -1687,7 +1687,7 @@ class LiveTradingSystem:
         asyncio.create_task(self._exit_live_trade_tp_sl_loop(slug))
 
     async def _do_sell_position(self, slug: str, order_info: dict, reason: str) -> None:
-        """Exécute le SELL (market) pour la position slug avec RETRY si position restante."""
+        """Execute the market SELL for the slug position, with RETRY if a position remains."""
         token_id = order_info["token_id"]
         size_shares = order_info["size_shares"]
         MAX_RETRIES = 2
@@ -1700,8 +1700,8 @@ class LiveTradingSystem:
             actual_shares = 0.0
         sell_size = max(0.0, round(actual_shares, 2))
         if sell_size < DUST_THRESHOLD:
-            logger.info(f"Exiting [{slug}]: position=0 (actual_balance={actual_shares:.2f}), pas de SELL — {reason}")
-            console.print(f"[dim]Position 0, pas de SELL ({reason}) — {slug}[/dim]")
+            logger.info(f"Exiting [{slug}]: position=0 (actual_balance={actual_shares:.2f}), no SELL — {reason}")
+            console.print(f"[dim]Position 0, no SELL ({reason}) — {slug}[/dim]")
             return
         
         for attempt in range(MAX_RETRIES + 1):
@@ -1718,17 +1718,17 @@ class LiveTradingSystem:
                 logger.exception(f"place_sell_with_fallback [{slug}]: {e}")
                 result = None
             
-            # Vérification position restante
+            # Check remaining position
             await asyncio.sleep(1.0)
             try:
                 remaining = await self._polymarket.get_position_size(token_id)
             except Exception as e:
-                logger.debug(f"Vérif position [{slug}]: {e}")
+                logger.debug(f"Position check [{slug}]: {e}")
                 remaining = 0.0
             
             if remaining <= DUST_THRESHOLD:
                 logger.info(f"SELL OK [{slug}] — position restante={remaining:.2f}")
-                console.print(f"[green]SELL exécuté — {reason} — {slug}[/green]")
+                console.print(f"[green]SELL executed — {reason} — {slug}[/green]")
                 
                 # Calcul P&L et logging (fire-and-forget)
                 entry_price = order_info.get("entry_price", 0)
@@ -1762,8 +1762,8 @@ class LiveTradingSystem:
                 console.print(f"[yellow]Position restante {remaining:.2f}, retry...[/yellow]")
                 sell_size = remaining
             else:
-                logger.warning(f"SELL ÉCHEC final [{slug}] position restante={remaining:.2f}")
-                console.print(f"[red]SELL échec — position restante {remaining:.2f} — {slug}[/red]")
+                logger.warning(f"SELL final FAILURE [{slug}] remaining position={remaining:.2f}")
+                console.print(f"[red]SELL failed — remaining position {remaining:.2f} — {slug}[/red]")
                 match_str = f"{order_info.get('home_team', '')} vs {order_info.get('away_team', '')}"
                 notify_sell_failed(match_str, remaining, slug)
 
@@ -1771,8 +1771,8 @@ class LiveTradingSystem:
         """Monitor position: exit on Take Profit (+%), Stop Loss (-%), or after exit_after seconds. Reads from _live_orders[slug]."""
         tp_pct = getattr(settings.trading, "take_profit_pct", 3.0)
         sl_pct = getattr(settings.trading, "stop_loss_pct", -15.0)
-        poll_interval = 0.5  # Vérif TP/SL toutes les 0.5 s (2×/s)
-        # Court délai pour que la position soit visible on-chain (fill déjà confirmé avant d'entrer ici)
+        poll_interval = 0.5  # TP/SL check every 0.5 s (2x/s)
+        # Short delay so the position is visible on-chain (fill already confirmed before entering here)
         wait_position_sec = 5.0
         start = datetime.now(timezone.utc)
         poll_count = 0
@@ -1797,10 +1797,10 @@ class LiveTradingSystem:
                     pos = 0.0
                 if not pos or pos < 0.5:
                     self._live_orders.pop(slug, None)
-                    logger.warning(f"TP/SL [{slug}]: position toujours 0 après {wait_position_sec:.0f}s (fill avait été confirmé)")
-                    console.print(f"[dim]Position non visible pour {slug}, pas de TP/SL[/dim]")
+                    logger.warning(f"TP/SL [{slug}]: position still 0 after {wait_position_sec:.0f}s (fill had been confirmed)")
+                    console.print(f"[dim]Position not visible for {slug}, no TP/SL[/dim]")
                     return
-            reason = "time_exit"  # défaut si on sort par time
+            reason = "time_exit"  # default when exiting on time
             while True:
                 await asyncio.sleep(poll_interval)
                 poll_count += 1
@@ -1813,17 +1813,17 @@ class LiveTradingSystem:
                 entry_price = order_info.get("entry_price") or 0.55
                 elapsed = (datetime.now(timezone.utc) - start).total_seconds()
                 exit_timeout = getattr(settings.trading, "exit_after_seconds", self.exit_after)
-                # Time exit en premier : garanti de sortir après exit_timeout s même si API bid échoue en live
+                # Time exit first: guaranteed to exit after exit_timeout s even if the bid API fails live
                 if elapsed >= exit_timeout:
                     reason = "time_exit"
-                    logger.info(f"TP/SL [{slug}] time_exit après {elapsed:.0f}s")
+                    logger.info(f"TP/SL [{slug}] time_exit after {elapsed:.0f}s")
                     break
                 try:
                     bid = await self._polymarket.get_bid_price(token_id)
                 except Exception as e:
-                    logger.debug(f"TP/SL [{slug}] get_bid_price: {e}, on continue (time_exit à {exit_timeout}s)")
+                    logger.debug(f"TP/SL [{slug}] get_bid_price: {e}, continuing (time_exit at {exit_timeout}s)")
                     continue
-                # Log fichier seulement toutes les ~60 s (pas la vérif : on check bien toutes les 0.5 s)
+                # File log only every ~60 s (not the check itself: we do check every 0.5 s)
                 if poll_count % 120 == 1 and poll_count > 1:
                     logger.info(f"TP/SL [{slug}] bid={bid} entry={entry_price:.3f} elapsed={elapsed:.0f}s")
                 if bid is None or bid <= 0:
@@ -1857,7 +1857,7 @@ class LiveTradingSystem:
         league: str = "",
         token_id: Optional[str] = None,
     ):
-        """Track real Polymarket prices for 120s - update goal with REAL PnL when done. Si token_id fourni (cache), on le réutilise."""
+        """Track real Polymarket prices for 120s - update goal with REAL PnL when done. If token_id provided (cache), reuse it."""
         try:
             analysis = await self._price_tracker.track_prices_after_goal(
                 slug=slug,
@@ -1868,7 +1868,7 @@ class LiveTradingSystem:
                 league=league or None,
                 token_id=token_id,
             )
-            # PnL réaliste: entrée = ask (achat), sortie = bid (vente) si dispo; sinon fallback price 0s/60s
+            # Realistic PnL: entry = ask (buy), exit = bid (sell) when available; otherwise fallback price 0s/60s
             entry = getattr(analysis, "entry_ask_0s", None) or analysis.price_at_0s
             exit_ = getattr(analysis, "exit_bid_60s", None) or analysis.price_at_60s
             if analysis.market_found and analysis.samples and entry and exit_ and entry > 0:
@@ -1887,12 +1887,12 @@ class LiveTradingSystem:
                 if net_pnl > 0:
                     self._wins += 1
 
-                # Une seule ligne CSV par but (avec PnL)
+                # A single CSV row per goal (with PnL)
                 self._append_backtest_row(goal)
 
                 report = self._price_tracker.format_analysis_report(analysis)
                 pnl_color = "green" if net_pnl > 0 else "red"
-                console.print(f"\n[bold cyan]📈 Backtest RÉEL[/bold cyan]")
+                console.print(f"\n[bold cyan]📈 REAL backtest[/bold cyan]")
                 console.print(f"   Entry (ask): {entry:.2f} → Exit (bid): {exit_:.2f}")
                 console.print(f"   [{pnl_color}]PnL: ${net_pnl:+.2f}[/{pnl_color}] | Total: ${self._total_pnl:+.2f}")
                 try:
@@ -1902,10 +1902,10 @@ class LiveTradingSystem:
                     logger.warning(f"Could not append to WORK_LOG: {e}")
             else:
                 if not analysis.market_found:
-                    console.print("[dim]   (Marché Polymarket non trouvé - pas de backtest pour ce but)[/dim]")
+                    console.print("[dim]   (Polymarket market not found - no backtest for this goal)[/dim]")
                 elif not entry or not exit_:
-                    console.print("[dim]   (Prix ask T+0 ou bid T+60 manquant - pas de PnL pour ce but)[/dim]")
-                # But enregistré même sans PnL (une ligne CSV)
+                    console.print("[dim]   (Missing ask at T+0 or bid at T+60 - no PnL for this goal)[/dim]")
+                # Goal recorded even without PnL (one CSV row)
                 try:
                     self._append_csv(goal)
                 except OSError as e:
@@ -1937,15 +1937,15 @@ class LiveTradingSystem:
             logger.warning(f"Could not append backtest row: {e}")
     
     async def _heartbeat_loop(self):
-        """Affiche un signe de vie toutes les 30s + table des matchs suivi(s)"""
+        """Print a heartbeat every 30s + table of followed matches"""
         while self._running:
             await asyncio.sleep(30)
             n = len(self._matches)
             n_live = sum(1 for m in self._matches.values() if m.get("period") or m.get("elapsed"))
             if n_live < n:
-                console.print(f"[dim]En écoute… {n} match(s) suivi(s) ({n_live} avec flux live)[/dim]")
+                console.print(f"[dim]Listening… {n} match(es) followed ({n_live} with live feed)[/dim]")
             else:
-                console.print(f"[dim]En écoute… {n} match(s) soccer suivi(s)[/dim]")
+                console.print(f"[dim]Listening… {n} soccer match(es) followed[/dim]")
             # Tableau : uniquement les matchs en live (avec period/elapsed)
             if n_live > 0:
                 rows = []
@@ -1970,7 +1970,7 @@ class LiveTradingSystem:
                 console.print(tbl)
     
     async def _gamma_refresh_loop(self):
-        """Rafraîchit la liste des matchs depuis Gamma API toutes les 2 min (fetch immédiat au démarrage)."""
+        """Refresh the match list from the Gamma API every 2 min (immediate fetch at startup)."""
         while self._running:
             n = await self._fetch_live_matches_from_gamma()
             if n > 0:
@@ -1996,7 +1996,7 @@ class LiveTradingSystem:
             await asyncio.sleep(120)
     
     async def _live_price_poll_loop(self):
-        """Grab le prix (home + away) des matchs en live 3×/s; au but, garde 3 min avant + 3 min après en CSV."""
+        """Grab home + away prices of live matches 3x/s; on a goal, keep 3 min before + 3 min after in CSV."""
         _cleanup_counter = 0
         while self._running:
             await asyncio.sleep(1.0 / 3.0)  # 3 fois par seconde
@@ -2048,7 +2048,7 @@ class LiveTradingSystem:
                         self._price_tracker.get_ask(token_away) if token_away else asyncio.sleep(0, None),
                         self._price_tracker.get_bid(token_away) if token_away else asyncio.sleep(0, None),
                     )
-                    # Toujours écrire une ligne realtime (1 par seconde) même si tous les prix sont None
+                    # Always write a realtime row (1 per second) even if all prices are None
                     self._append_realtime_prices(now, slug, home_team, away_team, ah, bh, ad, bd, aa, ba)
                 except Exception as e:
                     logger.debug(f"Price poll for {slug}: {e}")
@@ -2060,7 +2060,7 @@ class LiveTradingSystem:
             self._print_status()
     
     def _print_status(self):
-        """Print current status (réservé pour usage futur)."""
+        """Print current status (reserved for future use)."""
         pass
     
     async def _improvement_loop(self):
@@ -2081,7 +2081,7 @@ class LiveTradingSystem:
         # Only use goals with REAL PnL (from Polymarket prices)
         goals_with_pnl = [g for g in self._goals if g.pnl is not None]
         if len(goals_with_pnl) < 2:
-            console.print(f"[dim]Pas assez de backtests réels ({len(goals_with_pnl)}). Attendre plus de buts avec marché Polymarket.[/dim]")
+            console.print(f"[dim]Not enough real backtests ({len(goals_with_pnl)}). Waiting for more goals with a Polymarket market.[/dim]")
             return
         
         pnls = [g.pnl for g in goals_with_pnl]
@@ -2144,11 +2144,11 @@ class LiveTradingSystem:
         console.print(f"\n[green]Updated params: {self.params}[/green]")
     
     def _goal_minute_for_filter(self, minute: str) -> int:
-        """Minute number for filter: 1H/2H = période (30/60), pas minute 1 ou 2."""
+        """Minute number for filter: 1H/2H = period (30/60), not minute 1 or 2."""
         s = (minute or "").strip().upper()
         if not s:
             return 45
-        # 1H = première mi-temps → 30 ; 2H = deuxième mi-temps → 60
+        # 1H = first half → 30 ; 2H = second half → 60
         if "1H" in s or (s.startswith("1") and "H" in s) or "1ST" in s or "FIRST" in s:
             return 30
         if "2H" in s or (s.startswith("2") and "H" in s) or "2ND" in s or "SECOND" in s:
@@ -2158,7 +2158,7 @@ class LiveTradingSystem:
             if not digits:
                 return 45
             n = int(digits)
-            # Éviter de confondre "1" ou "2" seuls avec 1H/2H
+            # Avoid confusing a bare "1" or "2" with 1H/2H
             if n <= 2 and ("H" in s or "HALF" in s):
                 return 30 if n == 1 else 60
             return min(max(n, 0), 90)
